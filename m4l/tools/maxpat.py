@@ -52,6 +52,33 @@ def io_for(text):
         return 7, 1, ["int"]
     if cls == "live.thisdevice":
         return 1, 3, ["bang", "int", "int"]
+    # ---- MSP objects of the audio device (Scale Snap Detect)
+    if cls == "plugin~":
+        return 0, 2, ["signal", "signal"]
+    if cls == "plugout~":
+        return 2, 0, []
+    if cls in ("+~", "*~"):
+        return 2, 1, ["signal"]
+    if cls in ("sig~", "mstosamps~"):
+        return 1, 1, ["signal"]
+    if cls == "average~":
+        return 1, 1, ["signal"]
+    if cls == "snapshot~":
+        return 2, 1, ["float"]
+    if cls == "qmetro":
+        return 2, 1, ["bang"]
+    if cls == "dspstate~":
+        return 1, 4, ["int", "float", "int", "int"]
+    if cls == "pfft~":            # one fftin~ in the sub-patcher, no fftout~: analysis only
+        return 1, 0, []
+    if cls == "fftin~":
+        return 0, 3, ["signal", "signal", "signal"]
+    if cls == "cartopol~":
+        return 2, 2, ["signal", "signal"]
+    if cls == "poke~":
+        return 3, 0, []
+    if cls == "buffer~":
+        return 1, 2, ["float", "bang"]
     raise KeyError("unknown object class %r (add it to maxpat.io_for)" % cls)
 
 

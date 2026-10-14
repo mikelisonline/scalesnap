@@ -421,10 +421,14 @@ def build_main():
                            (7, "INFO"), (8, "RESULTS"), (9, "SAME"), (10, "STATUS"), (11, "AUDIO")):
         p.wire("JS", outlet, target, 0)
 
-    # ---- patcher dictionary -----------------------------------------------------------------------
-    d = p.to_dict(rect=(60.0, 90.0, 760.0, 560.0))
+    return device_dict(p, ui, DEVICE_WIDTH, AMXD_TYPE_MIDI_EFFECT)
+
+
+def device_dict(p, ui, width, amxd_type, rect=(60.0, 90.0, 760.0, 560.0)):
+    """Top-level patcher dictionary of a Max for Live device (shared with gen_patcher_detect.py)."""
+    d = p.to_dict(rect=rect)
     d["openinpresentation"] = 1
-    d["openrect"] = [0.0, 0.0, float(DEVICE_WIDTH), float(DEVICE_HEIGHT)]
+    d["openrect"] = [0.0, 0.0, float(width), float(DEVICE_HEIGHT)]
     d["openrectmode"] = 0
     d["default_fontsize"] = 10.0
     d["default_fontname"] = "Arial Bold"
@@ -441,7 +445,7 @@ def build_main():
         "version": 1, "creationdate": 3590052493, "modificationdate": 3590052493,
         "viewrect": [0.0, 0.0, 300.0, 500.0], "autoorganize": 1, "hideprojectwindow": 1,
         "showdependencies": 1, "autolocalize": 0, "contents": {"patchers": {}}, "layout": {},
-        "searchpath": {}, "detailsvisible": 0, "amxdtype": AMXD_TYPE_MIDI_EFFECT, "readonly": 0,
+        "searchpath": {}, "detailsvisible": 0, "amxdtype": amxd_type, "readonly": 0,
         "devpathtype": 0, "devpath": ".", "sortmode": 0, "viewmode": 0, "includepackages": 0,
     }
     d["autosave"] = 0

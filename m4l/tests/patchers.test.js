@@ -59,7 +59,10 @@ PATCH_FILES.forEach((f) => {
                 assert.notEqual(sid, did, where + ": self connection");
                 const k = sid + ":" + so;
                 used[k] = (used[k] || 0) + 1;
-                assert.equal(used[k], 1, where + ": outlet " + k + " fans out (Max does not define the order)");
+                // message outlets must not fan out (Max does not define the order); signal outlets may
+                if ((boxes[sid].outlettype || [])[so] !== "signal") {
+                    assert.equal(used[k], 1, where + ": outlet " + k + " fans out (Max does not define the order)");
+                }
             });
             // inlet/outlet boxes define the I/O of an embedded patcher
             const ins = patcher.boxes.filter((b) => b.box.maxclass === "inlet").map((b) => b.box.index).sort();

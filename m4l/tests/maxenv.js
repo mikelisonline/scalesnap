@@ -8,10 +8,13 @@ const { SRC } = require("./helpers");
 
 const BUNDLE_ORDER = ["scales.js", "snap.js", "detect.js", "favorites.js", "clip.js", "scalesnap_main.js"];
 
-function bundleSource() {
-    return BUNDLE_ORDER.map((f) => fs.readFileSync(path.join(SRC, f), "utf8")).join("\n");
+function bundleSource(sources) {
+    const list = sources || BUNDLE_ORDER.map((f) => path.join(SRC, f));
+    return list.map((f) => fs.readFileSync(f, "utf8")).join("\n");
 }
 
+/* opts.sources: absolute paths of the scripts to concatenate (default: the MIDI device's bundle);
+ * opts.jsarguments: the [js] object's arguments; opts.Buffer: constructor for the JS Buffer object. */
 function createEnv(opts) {
     opts = opts || {};
     const files = opts.files || {};            // fake file system for Dict/File: path -> text
@@ -55,11 +58,13 @@ function createEnv(opts) {
         arrayfromargs: function (a) { return Array.prototype.slice.call(a); },
         Task: FakeTask, Dict: FakeDict, File: FakeFile,
         LiveAPI: opts.LiveAPI || function () { throw new Error("no Live API"); },
+        jsarguments: opts.jsarguments || ["scalesnap.js"],
+        Buffer: opts.Buffer || function () { throw new Error("no Buffer"); },
         Date: FakeDate, JSON: JSON, Math: Math, Object: Object, Array: Array, String: String,
         Number: Number, isNaN: isNaN, parseInt: parseInt, RegExp: RegExp, Error: Error
     };
     const ctx = vm.createContext(sandbox);
-    vm.runInContext(bundleSource(), ctx, { filename: "scalesnap.js" });
+    vm.runInContext(bundleSource(opts.sources), ctx, { filename: opts.filename || "scalesnap.js" });
     return {
         ctx: ctx, out: out, posted: posted, tasks: tasks, sent: sent, files: files,
         advance(ms) { clock += ms; },

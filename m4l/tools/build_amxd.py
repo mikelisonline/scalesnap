@@ -5,9 +5,12 @@
     python3 m4l/tools/build_amxd.py --verify FILE   # only re-parse an .amxd and print its structure
 
 Output (m4l/dist/):
-    Scale Snap.amxd   MIDI effect device
-    scalesnap.js      the device's single [js] file (all modules concatenated; [js] has no include/require)
-    INSTALL.md        short install note
+    Scale Snap.amxd           MIDI effect device
+    scalesnap.js              its single [js] file (all modules concatenated; [js] has no include/require)
+    Scale Snap Detect.amxd    audio effect device (key/scale detection from audio, feeds Scale Snap)
+    scalesnap_detect.js       its single [js] file
+    ssd.spec.maxpat           the pfft~ sub-patcher of the audio device (must sit next to the .amxd)
+    INSTALL.md                short install note
 
 .amxd container (matches Ableton's maxdevtools amxd_textconv.py): a flat sequence of chunks, each
     4-byte ASCII tag | uint32 little-endian length | payload
@@ -25,6 +28,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 SRC = os.path.join(REPO, "m4l", "ScaleSnap")
+SRC_DETECT = os.path.join(REPO, "m4l", "ScaleSnapDetect")
 DIST = os.path.join(REPO, "m4l", "dist")
 
 DEVICE_TYPES = {"mmmm": "MIDI Effect", "aaaa": "Audio Effect", "iiii": "Instrument"}
@@ -43,6 +47,18 @@ DEVICES = [
         "type": "mmmm",
         "js_name": "scalesnap.js",
         "js_sources": ["scales.js", "snap.js", "detect.js", "favorites.js", "clip.js", "scalesnap_main.js"],
+    },
+    {
+        # Audio effect: chromagram from pfft~ magnitudes -> the SAME scorer as the MIDI device -> scalesnap.detect.
+        # The shared modules are bundled from the MIDI device's folder (not forked).
+        "name": "Scale Snap Detect",
+        "src": SRC_DETECT,
+        "patcher": os.path.join(SRC_DETECT, "Scale Snap Detect.maxpat"),
+        "type": "aaaa",
+        "js_name": "scalesnap_detect.js",
+        "js_sources": [os.path.join(SRC, "scales.js"), os.path.join(SRC, "detect.js"),
+                       os.path.join(SRC_DETECT, "chroma.js"), os.path.join(SRC_DETECT, "scalesnap_detect.js")],
+        "extra_files": [os.path.join(SRC_DETECT, "ssd.spec.maxpat")],   # loaded by pfft~ from the device's folder
     },
 ]
 
@@ -119,7 +135,10 @@ def build_device(dev, out_dir, meta=DEFAULT_META):
     with open(dev["patcher"], encoding="utf-8") as f:
         patcher = json.load(f)
     js_path = os.path.join(out_dir, dev["js_name"])
-    bundle_js([os.path.join(SRC, s) for s in dev["js_sources"]], js_path)
+    base = dev.get("src", SRC)       # relative JS sources are looked up here; absolute paths pass through
+    bundle_js([os.path.join(base, s) for s in dev["js_sources"]], js_path)
+    for extra in dev.get("extra_files", []):
+        shutil.copyfile(extra, os.path.join(out_dir, os.path.basename(extra)))
     data = make_amxd(patcher, dev["type"], meta)
     amxd_path = os.path.join(out_dir, dev["name"] + ".amxd")
     with open(amxd_path, "wb") as f:
