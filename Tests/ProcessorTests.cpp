@@ -11,8 +11,9 @@
 //==============================================================================
 // Counts heap operations while `counting` is set, so the audio callback can be checked for them.
 // JUCE allocates with malloc/realloc/free, so those are intercepted (glibc only; elsewhere the
-// check is skipped).
-static std::atomic<bool> counting { false };
+// check is skipped). `counting` is per thread: only the thread that runs processBlock is measured,
+// not JUCE's own timer thread, which allocates now and then (that made the check fail at random).
+static thread_local bool counting = false;
 static std::atomic<int> heapOps { 0 };
 
 #if defined(__GLIBC__)
@@ -24,10 +25,10 @@ void* __libc_calloc (std::size_t, std::size_t);
 void* __libc_realloc (void*, std::size_t);
 void __libc_free (void*);
 
-void* malloc (std::size_t n)                { if (counting.load()) ++heapOps; return __libc_malloc (n); }
-void* calloc (std::size_t n, std::size_t m) { if (counting.load()) ++heapOps; return __libc_calloc (n, m); }
-void* realloc (void* p, std::size_t n)      { if (counting.load()) ++heapOps; return __libc_realloc (p, n); }
-void free (void* p)                         { if (p != nullptr && counting.load()) ++heapOps; __libc_free (p); }
+void* malloc (std::size_t n)                { if (counting) ++heapOps; return __libc_malloc (n); }
+void* calloc (std::size_t n, std::size_t m) { if (counting) ++heapOps; return __libc_calloc (n, m); }
+void* realloc (void* p, std::size_t n)      { if (counting) ++heapOps; return __libc_realloc (p, n); }
+void free (void* p)                         { if (p != nullptr && counting) ++heapOps; __libc_free (p); }
 }
 #else
  #define SCALESNAP_COUNT_HEAP 0

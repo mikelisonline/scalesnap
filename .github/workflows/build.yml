@@ -16,6 +16,24 @@ jobs:
           cmake --build build
           ctest --test-dir build --output-on-failure
 
+  processor-tests:
+    # The tests that need JUCE: legacy plugin state restore through the real processor, no heap use in processBlock.
+    # Builds only the test target (not the VST3), so it stays quick; JUCE comes in through FetchContent as usual.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install JUCE's Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev \
+            libxcomposite-dev libxext-dev libfreetype-dev libfontconfig1-dev
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSCALESNAP_BUILD_PLUGIN=ON -DSCALESNAP_BUILD_PROCESSOR_TESTS=ON
+      - name: Build the processor tests
+        run: cmake --build build --target ScaleSnapProcessorTests --parallel
+      - name: Run the processor tests
+        run: ctest --test-dir build --output-on-failure -R ScaleSnapProcessorTests
+
   macos:
     needs: tests
     runs-on: macos-14
