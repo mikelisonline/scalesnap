@@ -58,3 +58,29 @@ jobs:
         with:
           name: ScaleSnap-Windows
           path: out
+
+  m4l:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Generated files are up to date
+        run: |
+          python3 m4l/tools/gen_scales.py --check
+          python3 m4l/tools/gen_patcher.py --check
+          python3 m4l/tools/gen_golden.py --check
+      - name: Node tests (snapping parity with C++, patcher simulation, detection, favorites, clips, .amxd)
+        run: node m4l/tests/run.js
+      - name: Build the Max for Live device
+        run: |
+          python3 m4l/tools/build_amxd.py
+          python3 m4l/tools/build_amxd.py --verify "m4l/dist/Scale Snap.amxd"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScaleSnap-M4L
+          path: |
+            m4l/dist/*.amxd
+            m4l/dist/scalesnap.js
+            m4l/dist/INSTALL.md

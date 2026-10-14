@@ -1,5 +1,21 @@
 # Scale Snap
 
+Keeps what you play in key, like Logic's Scale Quantize, with a library of 162 scales from many traditions.
+It comes in two forms:
+
+- **Max for Live MIDI effect: the recommended way in Ableton Live 11 Suite** (or Standard with Max for Live).
+  `Scale Snap.amxd` goes in the MIDI-effect slot right in front of your instrument on the same track: no second
+  track, no routing. It also detects the key and scale of what you play or of a MIDI clip, and can snap a
+  recorded clip to a scale. See [m4l/README.md](m4l/README.md) (download: `ScaleSnap-M4L` artifact of the
+  latest "Build" run).
+- **VST3 plugin** (below): for other hosts, for Live without Max for Live (Standard without the add-on, Intro, Lite),
+  and for the chord mode. In Ableton it needs the two-track setup described further down, because Live does not
+  host third-party plugins in the MIDI-effect slot.
+
+The rest of this page describes the VST3 plugin; the scale library and the correction rules are the same in both.
+
+## VST3 plugin
+
 A small MIDI plugin for Ableton Live (VST3, Mac and Windows) that keeps what you play in key, like
 Logic's Scale Quantize:
 
