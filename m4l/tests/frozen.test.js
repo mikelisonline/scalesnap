@@ -14,9 +14,10 @@ const BUILD = path.join(ROOT, "m4l", "tools", "build_amxd.py");
 const HFS_EPOCH = 2082844800;
 const DEVICES = [
     { name: "Scale Snap", type: "mmmm", amxdtype: 1835887981, patcher: "ScaleSnap/Scale Snap.maxpat",
-      deps: { "scalesnap.js": null } },
+      deps: { "scalesnap.js": null }, projectSections: ["patchers", "code"] },
     { name: "Scale Snap Detect", type: "aaaa", amxdtype: 1633771873, patcher: "ScaleSnapDetect/Scale Snap Detect.maxpat",
-      deps: { "scalesnap_detect.js": null, "ssd.spec.maxpat": "ScaleSnapDetect/ssd.spec.maxpat" } },
+      deps: { "scalesnap_detect.js": null, "ssd.spec.maxpat": "ScaleSnapDetect/ssd.spec.maxpat" },
+      projectSections: ["patchers", "code"] },
 ];
 
 /** Frozen .amxd -> { type, meta, files: [{ type, name, size, offset, vers, flag, mdat, data }] }; throws on any inconsistency. */
@@ -96,7 +97,7 @@ for (const dev of DEVICES) {
         }
     });
 
-    test(dev.name + ".amxd: main patcher is the unfrozen patcher plus dependency_cache", () => {
+    test(dev.name + ".amxd: main patcher is the unfrozen patcher plus dependency_cache and the project block", () => {
         const f = parseFrozen(fs.readFileSync(path.join(frozenDir, dev.name + ".amxd")));
         const main = f.files[0].data;
         assert.equal(main[main.length - 1], 0, "one trailing NUL");
@@ -104,7 +105,20 @@ for (const dev of DEVICES) {
         const json = JSON.parse(main.subarray(0, main.length - 1).toString("utf8"));
         const cache = json.patcher.dependency_cache;
         delete json.patcher.dependency_cache;
+        // Max 8 lists the embedded files in patcher.project.contents (js -> code, .maxpat -> patchers) and writes readonly 1;
+        // everything else in the project block is the source's.
+        const project = json.patcher.project;
         const source = JSON.parse(fs.readFileSync(path.join(ROOT, "m4l", dev.patcher), "utf8"));
+        const expectedContents = { patchers: {} };
+        for (const name of Object.keys(dev.deps)) {
+            if (name.endsWith(".js")) { (expectedContents.code = expectedContents.code || {})[name] = { kind: "javascript", local: 1 }; }
+            else { expectedContents.patchers[name] = { kind: "patcher", local: 1 }; }
+        }
+        assert.deepEqual(project.contents, expectedContents);
+        assert.deepEqual(Object.keys(project.contents), dev.projectSections);
+        assert.equal(project.readonly, 1);
+        project.contents = source.patcher.project.contents;
+        project.readonly = source.patcher.project.readonly;
         assert.deepEqual(json, source);
         assert.equal(json.patcher.project.amxdtype, dev.amxdtype);
         assert.deepEqual(cache.map((c) => c.name), Object.keys(dev.deps));

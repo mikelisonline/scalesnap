@@ -32,7 +32,8 @@ Outer file: chunks, each  tag(4 ASCII) | uint32 LITTLE-endian size | payload
 
 Dependencies are found by plain file name, exactly as for an unfrozen device ([js scalesnap.js] finds the embedded
 scalesnap.js, [pfft~ ssd.spec 16384 4] finds the embedded ssd.spec.maxpat); embedded files win over files of the
-same name on Max's search path. Max 8 also lists the dependencies in patcher.dependency_cache, which we do too.
+same name on Max's search path. Max 8 also lists the dependencies in patcher.dependency_cache and the project
+block (patcher.project.contents, readonly 1), which we do too.
 """
 import argparse
 import json
@@ -57,6 +58,16 @@ FILE_KINDS = {
     ".gendsp": (b"gDSP", "patchers"), ".svg": (b"svg ", "media"), ".png": (b"PNG ", "media"), ".aif": (b"AIFF", "media"),
     ".aiff": (b"AIFF", "media"),
 }
+
+# extension -> (section of patcher.project.contents, "kind") for the kinds seen in devices frozen by Max 8: the .js is
+# {"code": {"stringFormat.js": {"kind": "javascript", "local": 1}}} (OSC Send.amxd), the .maxpat and .svg are in
+# m4l/tests/fixtures/OSC MIDI Send.amxd, the .txt is in FrozenTest.amxd (Max 9). Max lists no other embedded
+# file kinds that we have a sample of (.png, .aif, .gendsp, .json ... are embedded but not listed), so neither do we.
+PROJECT_KINDS = {
+    ".maxpat": ("patchers", "patcher"), ".svg": ("media", "vectorimagefile"), ".js": ("code", "javascript"),
+    ".txt": ("data", "textfile"),
+}
+PROJECT_SECTIONS = ("patchers", "media", "code", "data")      # order Max writes them in; "patchers" is always there
 
 # One file of the collective. `type` is the raw 4 bytes; `mdat` is in HFS seconds, as stored.
 Entry = namedtuple("Entry", "name type data flag vers mdat")
@@ -201,6 +212,19 @@ def with_dependency_cache(patcher, device_name, names):
     return dict(patcher, patcher=inner)
 
 
+def with_project(patcher, names):
+    """Copy of the patcher whose patcher.project lists the embedded files the way Max 8 does for a frozen device.
+
+    Only `contents` (every embedded file of a kind in PROJECT_KINDS as {"kind": ..., "local": 1} under its section,
+    "patchers" first and always present) and `readonly` (1, as in every frozen fixture) change; the rest of the
+    project block is kept as the patcher has it."""
+    listed = [(n, PROJECT_KINDS[os.path.splitext(n)[1]]) for n in names if os.path.splitext(n)[1] in PROJECT_KINDS]
+    contents = {section: {n: {"kind": kind, "local": 1} for n, (sec, kind) in listed if sec == section}
+                for section in PROJECT_SECTIONS if section == "patchers" or any(sec == section for _, (sec, _) in listed)}
+    project = dict(patcher["patcher"]["project"], contents=contents, readonly=1)
+    return dict(patcher, patcher=dict(patcher["patcher"], project=project))
+
+
 def freeze(device_type, device_name, patcher, files, abstractions=(), mdat=None):
     """Frozen .amxd bytes for a device patcher plus its dependency files ({file name: bytes}, embedded in that order).
 
@@ -211,7 +235,7 @@ def freeze(device_type, device_name, patcher, files, abstractions=(), mdat=None)
         raise ValueError("patcher.project.amxdtype is %r, expected %r for %r" % (got, AMXDTYPE.get(device_type), device_type))
     check_dependencies(patcher, files, abstractions)
     mdat = source_date_mdat() if mdat is None else mdat
-    device = with_dependency_cache(patcher, device_name, list(files))
+    device = with_project(with_dependency_cache(patcher, device_name, list(files)), list(files))
     entries = [Entry(device_name + ".amxd", b"JSON", patcher_bytes(device), DEVICE_FLAG, 0, mdat)]
     for name, data in files.items():
         entries.append(Entry(name, file_kind(name)[0], data, 0, 0, mdat))

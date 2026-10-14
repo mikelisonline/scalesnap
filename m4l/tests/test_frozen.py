@@ -77,11 +77,56 @@ class FreezeTests(unittest.TestCase):
                          [("Dev.amxd", b"JSON", 17, 0), ("foo.js", b"TEXT", 0, 0), ("spec.maxpat", b"JSON", 0, 0)])
         self.assertEqual(dev["files"], self.files)
         self.assertEqual(dev["entries"][0].data[-1:], b"\0")
-        expected = dict(self.p["patcher"], dependency_cache=[
+        project = dict(self.p["patcher"]["project"], readonly=1, contents={
+            "patchers": {"spec.maxpat": {"kind": "patcher", "local": 1}}, "code": {"foo.js": {"kind": "javascript", "local": 1}}})
+        expected = dict(self.p["patcher"], project=project, dependency_cache=[
             {"name": "foo.js", "bootpath": "~/Documents/Max 8/Max for Live Devices/Dev Project/code", "type": "TEXT", "implicit": 1},
             {"name": "spec.maxpat", "bootpath": "~/Documents/Max 8/Max for Live Devices/Dev Project/patchers", "type": "JSON", "implicit": 1}])
         self.assertEqual(dev["patcher"]["patcher"], expected)
         self.assertEqual(list(dev["patcher"]["patcher"])[-2:], ["dependency_cache", "autosave"])
+
+    def test_project_block_lists_exactly_the_embedded_files(self):
+        project = A.parse_frozen(self.freeze())["patcher"]["patcher"]["project"]
+        self.assertEqual(project["contents"], {"patchers": {"spec.maxpat": {"kind": "patcher", "local": 1}},
+                                               "code": {"foo.js": {"kind": "javascript", "local": 1}}})
+        self.assertEqual(list(project["contents"]), ["patchers", "code"])
+        self.assertEqual((project["amxdtype"], project["readonly"]), (AMXDTYPE_MIDI, 1))
+
+    def test_project_block_other_kinds_and_untouched_fields(self):
+        p = patcher(box("js a.js"))
+        p["patcher"]["project"].update({"readonly": 0, "contents": {"patchers": {"stale.maxpat": {}}}, "devpath": "."})
+        files = {"a.js": b"", "x.svg": b"<svg/>", "n.txt": b"", "y.png": b""}
+        project = A.with_project(p, list(files))["patcher"]["project"]
+        # kinds Max 8 lists; png is embedded but, as in Max's own devices, not listed; stale entries are replaced
+        self.assertEqual(project["contents"], {"patchers": {}, "media": {"x.svg": {"kind": "vectorimagefile", "local": 1}},
+                                               "code": {"a.js": {"kind": "javascript", "local": 1}},
+                                               "data": {"n.txt": {"kind": "textfile", "local": 1}}})
+        self.assertEqual(list(project["contents"]), ["patchers", "media", "code", "data"])
+        self.assertEqual((project["readonly"], project["devpath"]), (1, "."))
+        self.assertEqual(list(project), ["amxdtype", "readonly", "contents", "devpath"])
+
+    def test_project_block_without_dependencies(self):
+        project = A.parse_frozen(A.freeze("mmmm", "Dev", patcher(box("t b")), {}))["patcher"]["patcher"]["project"]
+        self.assertEqual((project["contents"], project["readonly"]), ({"patchers": {}}, 1))
+
+    def test_project_block_has_the_structure_of_the_max_8_fixtures(self):
+        """Same keys, in the same order, as a device frozen by Max 8 (the generated patchers are a superset only by viewmode/includepackages)."""
+        with open(os.path.join(FIXTURES, "OSC MIDI Send.amxd"), "rb") as f:
+            real = A.parse_frozen(f.read())["patcher"]["patcher"]["project"]
+        for kind in real["contents"].values():
+            for entry in kind.values():
+                self.assertEqual(entry, {"kind": entry["kind"], "local": 1})
+        self.assertEqual((real["readonly"], list(real["contents"])), (1, ["patchers", "media"]))
+        self.assertEqual(real["contents"]["patchers"]["Overlay.maxpat"], {"kind": "patcher", "local": 1})
+        for dev in B.DEVICES:
+            with open(dev["patcher"], encoding="utf-8") as f:
+                src = json.load(f)
+            built = A.parse_frozen(A.freeze(dev["type"], dev["name"], src, B.device_files(dev),
+                                            {n for n in os.listdir(os.path.dirname(dev["patcher"])) if n.endswith(".maxpat")} - {os.path.basename(dev["patcher"])}))
+            project = built["patcher"]["patcher"]["project"]
+            self.assertEqual(project["readonly"], 1)
+            self.assertEqual([k for k in real if k != "amxdtype"], [k for k in project if k in real and k != "amxdtype"])
+            self.assertEqual(sorted(sum((list(v) for v in project["contents"].values()), [])), sorted(built["files"]))
 
     def test_without_dependencies(self):
         dev = A.parse_frozen(A.freeze("mmmm", "Dev", patcher(box("t b")), {}))

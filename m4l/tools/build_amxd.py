@@ -139,7 +139,7 @@ def build_device(dev, out_dir, frozen=True, meta=DEFAULT_META):
     if {k: info[k] for k in expected} != expected:
         raise AssertionError("%s does not read back as written" % path)
     if frozen:
-        if info["patcher"] != amxd_frozen.with_dependency_cache(patcher, dev["name"], list(files)):
+        if info["patcher"] != amxd_frozen.with_project(amxd_frozen.with_dependency_cache(patcher, dev["name"], list(files)), list(files)):
             raise AssertionError("%s: embedded patcher differs from the source patcher" % path)
     elif info["patcher"] != patcher:
         raise AssertionError("%s: patcher differs from the source patcher" % path)

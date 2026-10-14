@@ -248,7 +248,7 @@ python3 m4l/tools/check_chroma.py   # needs NumPy
   (loaded in a sandbox that imitates the legacy `[js]` environment), an ES5 syntax check, structural validation
   of every `.maxpat` (valid cords, no message fan-out, layout inside 440 x 169, parameter names), and the built `.amxd`.
 * Frozen devices (`frozen.test.js`, `test_frozen.py`): the built files are parsed by an independent reader (device type,
-  embedded file list and contents equal the sources, main patcher = source patcher + `dependency_cache`); two builds are
+  embedded file list and contents equal the sources, main patcher = source patcher + `dependency_cache` + the `project` block listing the embedded files, `readonly` 1); two builds are
   byte-identical; the writer reproduces real devices frozen by Max (`tests/fixtures/`, MIT, Ableton AG) byte for byte;
   the build fails on a referenced file that is not embedded and on an embedded file nothing references.
 * Audio device (`chroma.test.js`, `detectdevice.test.js`): synthetic chroma vectors (C major scale, A minor pentatonic,
