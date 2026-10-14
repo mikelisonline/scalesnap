@@ -123,7 +123,7 @@ test("the patcher agrees with the JS NoteModel on random input", () => {
 
 test("the patcher matches the C++ NoteTracker event for event (randomized scripts)", () => {
     const g = loadGolden();
-    let total = 0;
+    let total = 0, stillSounding = 0;
     g.scenarios.forEach((sc, si) => {
         const c = makeCore();
         c.setMap(Snap.buildMap(sc.start[0], Scales.SCALES[sc.start[1]].mask, sc.start[2]));
@@ -136,7 +136,14 @@ test("the patcher matches the C++ NoteTracker event for event (randomized script
             assert.deepEqual(got, want, "scenario " + si + " op " + i + " " + JSON.stringify(op));
             total += want.length;
         });
-        // nothing may remain sounding that the C++ tracker would not also release
+        // At the end of the script the patcher must have exactly the notes sounding that the C++
+        // tracker has (releaseAll on the channel): flushing releases those and nothing else, and
+        // afterwards nothing is left.
+        assert.ok(Array.isArray(sc.remaining), "golden file records the notes still sounding");
+        assert.deepEqual(c.flush(), sc.remaining.map((n) => ev(false, n, 0)), "scenario " + si + ": notes still sounding at the end");
+        assert.deepEqual(c.flush(), [], "scenario " + si + ": nothing remains sounding after the flush");
+        stillSounding += sc.remaining.length;
     });
     assert.ok(total > 1000);
+    assert.ok(stillSounding > 20, "some scenarios end with notes held, so the end-of-script check has teeth");
 });

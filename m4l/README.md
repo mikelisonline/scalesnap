@@ -54,7 +54,8 @@ mentioning `scalesnap.js`. If the script fails to load the device passes notes t
 | **Snap Clip** | Rewrites the selected MIDI clip to the current key/scale (see below). |
 | **Detect** | See below. |
 
-Non-note MIDI (CC, pitch bend, channel and polyphonic aftertouch, sustain) passes through unchanged.
+Non-note MIDI (CC, pitch bend, channel pressure, sustain, program change, system messages) passes through **byte
+for byte**: it never enters the note path, so a 14-bit pitch bend keeps its fine resolution.
 Polyphonic aftertouch follows the corrected note of the key that is held.
 
 **No stuck notes.** The device remembers which note each key actually produced. Releasing a key always
@@ -70,8 +71,9 @@ into a clip:
 
 * **Snap Clip** (recommended): select the MIDI clip (so it shows in the Clip View), set the key and scale,
   press **Snap Clip**. Notes are moved to the chosen scale using the same rules as the live correction.
-  With *Block*, wrong notes are **muted, not deleted**. If two notes end up on the same pitch at the same
-  time, the later one is muted. Undo with Cmd/Ctrl-Z (check that it is one step on your system).
+  With *Block*, wrong notes are **muted, not deleted**. Your own in-scale notes are never touched: if a moved
+  note lands on a pitch where another note already sounds at the same time (same start, or overlapping), the
+  moved note is the one that is muted. Between two moved notes the longer is kept, then the louder, then the earlier. Undo with Cmd/Ctrl-Z (check that it is one step on your system).
 * Record the device's *output* on a second track: set that track's *MIDI From* to this track and choose the
   device (Scale Snap) or *Post FX* in the second drop-down.
 
@@ -112,8 +114,9 @@ Category *Favorites* lists them.
 
 ### Saving, automation
 
-The scale is saved in the Live Set as its **stable id** (a hidden *Scale ID* parameter holding a hash of the
-scale's string id), never as a list position, so adding or reordering scales in a future version does not
+The scale is saved in the Live Set as its **stable id** (three hidden 8-bit *Scale ID 1/2/3* parameters holding the
+bytes of a 24-bit hash of the scale's string id; 8 bits each because Max for Live's Int type is 0-255, so no float
+rounding can change the id), never as a list position, so adding or reordering scales in a future version does not
 change what an old Set selects. Power, Key, Category, Correction, Detect Memory, Previous/Next Scale are
 normal automatable and MIDI-mappable parameters.
 
@@ -191,9 +194,10 @@ plugin~ ------------------------------------------------------> plugout~        
 ## How the Scale Snap MIDI device works
 
 ```
-midiin -> midiparse -> [p snapcore] -> midiformat -> midiout        (native Max objects, high priority)
-                            ^
-            128-entry lookup (coll), rewritten by scalesnap.js on every key/scale/mode/power change
+midiin -> status router -+-> midiparse -> [p snapcore] -> midiformat -> midiout   (note-off, note-on, poly pressure)
+                         |                          ^
+                         |      128-entry lookup (coll), rewritten by scalesnap.js on every key/scale/mode/power change
+                         +-> midiout                                                (everything else, byte for byte)
 ```
 
 `[js]` always runs on Max's low-priority thread, so it is **not** in the note path. It builds the lookup
@@ -271,6 +275,10 @@ after freezing; `live.comment` accepts `set`; `kslider` polyphonic `set` shows t
 `clear`/`append`/`set -1`; `live.thisdevice`'s middle outlet reports device on/off; midiparse/midiformat outlet order
 (polyphonic aftertouch, channel); `get_notes_extended` / `apply_note_modifications` call and return formats from `[js]`;
 Snap Clip undo; `~/Documents/Max 8/...` writable; no added latency or jitter; whether Live records pre-device input.
+Also: the status router (`t` / `split` / `gate`) forwards a pitch bend byte for byte (bend a controller through the device
+and compare with the device off); the UI-only objects (Fav, Snap Clip, Apply, ...) are not listed as parameters in Live's
+automation chooser and loading a Set does not press them; the three hidden *Scale ID* parameters restore the scale after
+saving and reopening a Set.
 
 ### Scale Snap Detect (audio effect)
 

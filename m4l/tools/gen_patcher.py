@@ -8,7 +8,8 @@ hand invites wiring mistakes. The generated JSON is committed and CI fails if it
     python3 m4l/tools/gen_patcher.py --check    # exit 1 if the committed file is stale
 
 Realtime path (native Max objects only, see docs/design in m4l/README.md):
-    midiin -> midiparse -> [p snapcore] -> midiformat -> midiout
+    midiin -> status router -+-> midiparse -> [p snapcore] -> midiformat -> midiout   (note-off/on, poly pressure)
+                             +-> midiout                                              (everything else, unchanged)
 [p snapcore] is driven by a 128-entry lookup (coll) that scalesnap.js rewrites whenever key, scale,
 mode or power change. It remembers which output note each held key produced (so note-offs always
 match, even after a scale change) and reference-counts output notes (two keys on the same output
@@ -285,6 +286,10 @@ class UI:
         box = {"maxclass": kind, "numinlets": nin, "numoutlets": nout, "outlettype": types,
                "patching_rect": self._patch_rect(pres[2], pres[3]),
                "presentation": 1, "presentation_rect": [float(x) for x in pres], "varname": name}
+        if kind.startswith("live."):
+            # UI only, not a Live parameter. Explicit, so that restoring a Set can never re-trigger it
+            # (Fav is a toggle: a restored "on" would flip a favorite on every load).
+            box["parameter_enable"] = 0
         box.update(extra)
         return self.p.raw(name, box)
 
@@ -329,34 +334,66 @@ def build_main():
     ui.free("live.comment", "AUDIO", (232, 134, 148, 30), 0, [], {"text": "", "fontsize": 9.0, "textjustification": 0})
     ui.free("live.text", "AUDIOAPPLY", (386, 140, 48, 18), 2, ["", ""], {"mode": 0, "text": "Apply"})
 
-    # Hidden parameter: the selected scale, stored as its stable uid (never the list position).
-    uid_box = {"maxclass": "live.numbox", "numinlets": 1, "numoutlets": 2, "outlettype": ["", "float"],
-               "patching_rect": ui._patch_rect(60, 15), "presentation": 0,
-               "parameter_enable": 1, "varname": "Scale ID",
-               "saved_attribute_attributes": {"valueof": {
-                   "parameter_longname": "Scale ID", "parameter_shortname": "Scale ID", "parameter_modmode": 0,
-                   "parameter_type": 1, "parameter_mmin": 0, "parameter_mmax": 16777215,
-                   "parameter_initial": [default_uid], "parameter_initial_enable": 1,
-                   "parameter_unitstyle": 0, "parameter_invisible": 1}}}
-    b = p.raw("UID", uid_box)
-    ui.params.append((b["id"], "Scale ID", "Scale ID"))
+    # Hidden parameters: the selected scale, stored as its stable uid (never the list position).
+    # The uid is a 24-bit hash. A single Int parameter is not safe for it: Max for Live labels the Int type
+    # "0-255", and a float parameter would go through Live's float32 value / normalisation, which cannot
+    # be relied on to hand back every integer up to 2^24 exactly. So it is split into three 8-bit Int
+    # parameters (high, mid, low byte), each well inside the nominal range; the script rounds on read.
+    # Each is reported back to the script as "scaleuidbyte <n> <value>"; the script writes
+    # "high mid low" to the [unpack] below. tests/main.test.js round-trips every scale.
+    split_box = p.obj("UID_SPLIT", "unpack 0 0 0", (300, 60), w=80, varname="UID_SPLIT")
+    for n, shift in ((1, 16), (2, 8), (3, 0)):
+        longname = "Scale ID %d" % n
+        uid_box = {"maxclass": "live.numbox", "numinlets": 1, "numoutlets": 2, "outlettype": ["", "float"],
+                   "patching_rect": ui._patch_rect(60, 15), "presentation": 0,
+                   "parameter_enable": 1, "varname": longname,
+                   "saved_attribute_attributes": {"valueof": {
+                       "parameter_longname": longname, "parameter_shortname": longname, "parameter_modmode": 0,
+                       "parameter_type": 1, "parameter_mmin": 0, "parameter_mmax": 255,
+                       "parameter_initial": [(default_uid >> shift) & 255], "parameter_initial_enable": 1,
+                       "parameter_unitstyle": 0, "parameter_invisible": 1}}}
+        b = p.raw("UID%d" % n, uid_box)
+        ui.params.append((b["id"], longname, longname))
 
     # ---- realtime MIDI path ---------------------------------------------------------------------
+    # midiin delivers raw bytes. Only note-off/note-on/poly-aftertouch (status 0x80-0xAF) go through
+    # midiparse -> p snapcore -> midiformat. Everything else (CC, program, channel pressure, pitch bend,
+    # system messages) goes from midiin to midiout unchanged, byte for byte: midiparse/midiformat
+    # without @hires carry a pitch bend with 7 bits only, and 14-bit bend must not get stepped.
+    # A status byte (0x80-0xF7) selects the route for the data bytes that follow (running status
+    # included); real-time bytes (0xF8-0xFF) are passed on at once and do not change the route.
     y = 20
     p.obj("MIDIIN", "midiin", (20, y))
-    p.obj("PARSE", "midiparse", (20, y + 40))
-    p.obj("TNOTE", "t l l", (20, y + 80))
-    p.obj("PNOTE", "prepend note", (120, y + 120))
-    p.subpatcher("CORE", "p snapcore", core, (20, y + 160), w=330)
-    p.obj("FORMAT", "midiformat", (20, y + 240))
-    p.obj("MIDIOUT", "midiout", (20, y + 280))
-    p.wire("MIDIIN", 0, "PARSE", 0)
+    p.obj("TBYTE", "t i i", (20, y + 30))                    # right outlet first: route, then byte
+    p.obj("SPLIT_NOTEST", "split 128 175", (200, y + 60), w=100)   # note-off, note-on, poly pressure statuses
+    p.message("MSG_route_notes", "2", (200, y + 90))
+    p.obj("SPLIT_OTHERST", "split 176 247", (300, y + 90), w=100)  # CC ... system common / sysex statuses
+    p.message("MSG_route_other", "1", (300, y + 120))
+    p.obj("SPLIT_RT", "split 0 247", (20, y + 60), w=100)    # data and status bytes | real-time bytes
+    p.obj("ROUTE", "gate 2", (20, y + 120))                   # 1 = straight to midiout, 2 = note path
+    p.obj("PARSE", "midiparse", (20, y + 150))
+    p.obj("TNOTE", "t l l", (20, y + 190))
+    p.obj("PNOTE", "prepend note", (120, y + 230))
+    p.subpatcher("CORE", "p snapcore", core, (20, y + 270), w=330)
+    p.obj("FORMAT", "midiformat", (20, y + 350))
+    p.obj("MIDIOUT", "midiout", (20, y + 390))
+    p.wire("MIDIIN", 0, "TBYTE", 0)
+    p.wire("TBYTE", 1, "SPLIT_NOTEST", 0)
+    p.wire("SPLIT_NOTEST", 0, "MSG_route_notes", 0)
+    p.wire("MSG_route_notes", 0, "ROUTE", 0)
+    p.wire("SPLIT_NOTEST", 1, "SPLIT_OTHERST", 0)
+    p.wire("SPLIT_OTHERST", 0, "MSG_route_other", 0)
+    p.wire("MSG_route_other", 0, "ROUTE", 0)
+    p.wire("TBYTE", 0, "SPLIT_RT", 0)
+    p.wire("SPLIT_RT", 0, "ROUTE", 1)
+    p.wire("SPLIT_RT", 1, "MIDIOUT", 0)       # real-time bytes
+    p.wire("ROUTE", 0, "MIDIOUT", 0)          # not a note message: unchanged
+    p.wire("ROUTE", 1, "PARSE", 0)
     p.wire("PARSE", 0, "TNOTE", 0)
     p.wire("TNOTE", 0, "CORE", 0)
     p.wire("TNOTE", 1, "PNOTE", 0)
     p.wire("PARSE", 1, "CORE", 1)
-    for i in range(2, 7):
-        p.wire("PARSE", i, "FORMAT", i)       # CC, program, channel pressure, pitch bend, channel: unchanged
+    p.wire("PARSE", 6, "FORMAT", 6)           # channel (the output notes keep the channel they came in on)
     p.wire("CORE", 0, "FORMAT", 0)
     p.wire("CORE", 1, "FORMAT", 1)
     p.wire("FORMAT", 0, "MIDIOUT", 0)
@@ -380,7 +417,8 @@ def build_main():
     to_js("MODE", 0, "mode")
     to_js("CAT", 0, "category")
     to_js("SCALE", 0, "scalemenu")
-    to_js("UID", 0, "scaleuid")
+    for n in (1, 2, 3):
+        to_js("UID%d" % n, 0, "scaleuidbyte %d" % (n - 1), name="PP_scaleuidbyte%d" % n)
     to_js("LISTEN", 0, "listen")
     to_js("MEMORY", 0, "memory")
     to_js("RESULTS", 0, "resultselect")
@@ -417,9 +455,11 @@ def build_main():
     p.wire("MSG_favchanged", 0, "JS", 0)
 
     # script -> UI (one outlet per object, see scalesnap_main.js OUT)
-    for outlet, target in ((1, "KEY"), (2, "CAT"), (3, "SCALE"), (4, "UID"), (5, "FAV"), (6, "KB"),
+    for outlet, target in ((1, "KEY"), (2, "CAT"), (3, "SCALE"), (4, "UID_SPLIT"), (5, "FAV"), (6, "KB"),
                            (7, "INFO"), (8, "RESULTS"), (9, "SAME"), (10, "STATUS"), (11, "AUDIO")):
         p.wire("JS", outlet, target, 0)
+    for k, n in enumerate((1, 2, 3)):
+        p.wire("UID_SPLIT", k, "UID%d" % n, 0)
 
     return device_dict(p, ui, DEVICE_WIDTH, AMXD_TYPE_MIDI_EFFECT)
 

@@ -51,6 +51,10 @@ class Graph {
             case "+": case "-": case ">": n.state.right = n.args.length ? n.args[0] : 0; break;
             case "gate": n.state.open = 0; break;
             case "t": case "sel": case "unpack": case "uzi": case "loadbang": break;
+            case "split": n.state.lo = n.args[0]; n.state.hi = n.args[1]; break;
+            case "midiin": case "midiout": n.state.bytes = []; break;
+            case "midiparse": n.state.status = -1; n.state.data = []; break;
+            case "midiformat": n.state.channel = 1; break;
             default: throw new Error("maxsim: unsupported object '" + n.cls + "'");
         }
     }
@@ -149,6 +153,47 @@ class Graph {
                 out(1, "bang");
                 return;
             }
+            case "split": {
+                if (inlet === 1) { n.state.lo = num(msg); return; }
+                if (inlet === 2) { n.state.hi = num(msg); return; }
+                const v = num(msg);
+                out(v >= n.state.lo && v <= n.state.hi ? 0 : 1, v);
+                return;
+            }
+            case "midiout": n.state.bytes.push(num(msg)); return;
+            case "midiparse": {
+                // A byte stream in; complete channel messages out (outlets: 0 note, 1 poly pressure, 2 CC,
+                // 3 program, 4 channel pressure, 5 pitch bend, 6 channel; right to left, so the channel comes first).
+                // Without @hires a pitch bend is modelled as the 7-bit MSB only. Note-offs come out as velocity 0.
+                const b = num(msg), st = n.state;
+                if (b >= 0xF8) { return; }                       // real-time bytes do not disturb a message
+                if (b >= 0x80) { st.status = b; st.data = []; return; }
+                if (st.status < 0) { return; }
+                st.data.push(b);
+                const kind = st.status & 0xF0, need = (kind === 0xC0 || kind === 0xD0) ? 1 : 2;
+                if (st.data.length < need) { return; }
+                const d = st.data; st.data = [];
+                out(6, (st.status & 0x0F) + 1);
+                if (kind === 0x80) { out(0, [d[0], 0]); }
+                else if (kind === 0x90) { out(0, [d[0], d[1]]); }
+                else if (kind === 0xA0) { out(1, [d[0], d[1]]); }
+                else if (kind === 0xB0) { out(2, [d[0], d[1]]); }
+                else if (kind === 0xC0) { out(3, d[0]); }
+                else if (kind === 0xD0) { out(4, d[0]); }
+                else if (kind === 0xE0) { out(5, d[1]); }
+                return;
+            }
+            case "midiformat": {
+                // Inlets: 0 note, 1 poly pressure, 2 CC, 3 program, 4 channel pressure, 5 pitch bend (7-bit
+                // without @hires), 6 channel (cold). Emits the message's bytes one after the other.
+                if (inlet === 6) { n.state.channel = num(msg); return; }
+                const ch = (n.state.channel - 1) & 0x0F, m = Array.isArray(msg) ? msg : [msg];
+                const bytes = inlet === 0 ? [0x90 | ch, m[0], m[1]] : inlet === 1 ? [0xA0 | ch, m[0], m[1]]
+                    : inlet === 2 ? [0xB0 | ch, m[0], m[1]] : inlet === 3 ? [0xC0 | ch, m[0]]
+                    : inlet === 4 ? [0xD0 | ch, m[0]] : [0xE0 | ch, 0, m[0]];
+                bytes.forEach((x) => out(0, x));
+                return;
+            }
             default: throw new Error("maxsim: cannot run " + n.cls);
         }
     }
@@ -175,10 +220,46 @@ class SubpatcherHarness {
     coll(idOrText) { return null; }
 }
 
+/** The realtime MIDI path of the top-level device patcher (midiin ... midiout), executable on its own.
+ *  Everything that is not part of it (the [js] object, the UI, the note copy for detection) is left out. */
+class RealtimePath {
+    constructor(patcher) {
+        const boxes = patcher.boxes.map((b) => b.box);
+        const byId = {};
+        boxes.forEach((b) => { byId[b.id] = b; });
+        const start = boxes.find((b) => b.text === "midiin");
+        const keep = {};
+        const visit = (id) => {
+            const b = byId[id];
+            if (keep[id] || /^(js|prepend) /.test(b.text || "")) { return; }
+            keep[id] = true;
+            patcher.lines.forEach((l) => { if (l.patchline.source[0] === id) { visit(l.patchline.destination[0]); } });
+        };
+        visit(start.id);
+        this.graph = new Graph({
+            boxes: patcher.boxes.filter((b) => keep[b.box.id]),
+            lines: patcher.lines.filter((l) => keep[l.patchline.source[0]] && keep[l.patchline.destination[0]])
+        }, null);
+        const find = (text) => Object.values(this.graph.nodes).find((n) => n.box.text === text);
+        this.midiin = find("midiin");
+        this.midiout = find("midiout");
+        this.core = find("p snapcore");
+        this.parse = find("midiparse");
+        this.graph.fireLoadbangs();
+    }
+    /** One incoming MIDI byte (what [midiin] outputs). */
+    byte(b) { this.graph.send(this.midiin, 0, b); }
+    bytes(list) { list.forEach((b) => this.byte(b)); }
+    /** Bytes that reached [midiout] since the last call. */
+    take() { const r = this.midiout.state.bytes; this.midiout.state.bytes = []; return r; }
+    /** Writes one snap table entry ("index value") into [p snapcore]. */
+    mapEntry(index, value) { this.graph.deliver(this.core, 2, [index, value]); }
+}
+
 function findBox(patcher, text) {
     const b = patcher.boxes.map((x) => x.box).find((x) => x.text === text);
     if (!b) { throw new Error("no box '" + text + "'"); }
     return b;
 }
 
-module.exports = { Graph, SubpatcherHarness, findBox };
+module.exports = { Graph, SubpatcherHarness, RealtimePath, findBox };

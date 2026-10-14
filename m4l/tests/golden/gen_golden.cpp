@@ -6,6 +6,7 @@
 //   "snap":      base64 of every ScaleEngine::snap() result as (result - note + 128), order scale, mode,
 //                root, note; 255 = blocked
 //   "scenarios": random note-on/off/scale-change scripts and the exact events NoteTracker produced.
+//                "remaining" = output notes still sounding at the end of each script.
 //                The JS NoteModel, and the real p snapcore patcher run in tests/maxsim.js, must match.
 #include "ScaleEngine.h"
 
@@ -122,7 +123,14 @@ int main()
                           + "," + std::to_string (evs[k].note) + "," + std::to_string (evs[k].velocity) + "]";
             events += "]";
         }
-        std::printf ("], \"events\": [%s]}%s\n", events.c_str(), sc + 1 < numScenarios ? "," : "");
+        // Notes still sounding at the end of the script (what releaseAll would turn off), ascending.
+        std::string remaining;
+        tracker.releaseAll (1, [&] (int, int note)
+        {
+            remaining += std::string (remaining.empty() ? "" : ",") + std::to_string (note);
+        });
+        std::printf ("], \"events\": [%s], \"remaining\": [%s]}%s\n", events.c_str(), remaining.c_str(),
+                     sc + 1 < numScenarios ? "," : "");
     }
     std::printf ("  ]\n}\n");
     return 0;

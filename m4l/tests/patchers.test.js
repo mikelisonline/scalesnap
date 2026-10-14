@@ -85,6 +85,63 @@ PATCH_FILES.forEach((f) => {
     });
 });
 
+// Max numbers a sub-patcher's inlets and outlets by their left-to-right position in the sub-patcher
+// (the saved "index" follows the position). Two boxes at the same x leave the order up to Max, so a
+// swapped note/poly outlet of [p snapcore] would silently turn aftertouch into notes.
+PATCH_FILES.forEach((f) => {
+    test("inlets and outlets of every sub-patcher are laid out left to right in index order in " + path.basename(f), () => {
+        const top = JSON.parse(fs.readFileSync(f, "utf8")).patcher;
+        let checked = 0;
+        allPatchers(top, path.basename(f)).forEach(({ patcher, where }) => {
+            ["inlet", "outlet"].forEach((kind) => {
+                const io = patcher.boxes.map((b) => b.box).filter((b) => b.maxclass === kind);
+                io.sort((a, b) => a.index - b.index);
+                for (let i = 1; i < io.length; i++) {
+                    checked++;
+                    assert.ok(io[i].patching_rect[0] > io[i - 1].patching_rect[0],
+                        where + ": " + kind + " " + io[i].index + " (x=" + io[i].patching_rect[0] + ") must be right of " + kind + " " +
+                        io[i - 1].index + " (x=" + io[i - 1].patching_rect[0] + ")");
+                }
+            });
+        });
+        if (f === mainFile) { assert.ok(checked >= 4, "p snapcore has 4 inlets and 2 outlets: 3 + 1 neighbouring pairs to check"); }
+    });
+});
+
+// A saved Live Set restores every live.* object that is a parameter. A button or toggle that is only
+// UI (Fav, Snap Clip, Apply, ...) must therefore say parameter_enable 0 explicitly, otherwise loading a
+// Set could press it (Fav would flip a favorite on every load) or add unnamed parameters to Live.
+const PARAMETERS = {
+    "Scale Snap.maxpat": ["Power", "Key", "Category", "Previous Scale", "Next Scale", "Correction", "Detect Memory",
+        "Scale ID 1", "Scale ID 2", "Scale ID 3"],
+    "Scale Snap Detect.maxpat": ["Listen", "Send to Scale Snap", "Memory", "Gate Threshold"]
+};
+Object.keys(PARAMETERS).forEach((name) => {
+    test("only the intended objects are Live parameters in " + name, () => {
+        const file = PATCH_FILES.find((f) => path.basename(f) === name);
+        const top = JSON.parse(fs.readFileSync(file, "utf8")).patcher;
+        const allowed = PARAMETERS[name];
+        const enabled = [];
+        allPatchers(top, name).forEach(({ patcher, where }) => {
+            patcher.boxes.map((b) => b.box).forEach((bx) => {
+                if (!/^live\./.test(bx.maxclass)) {
+                    assert.ok(bx.parameter_enable === undefined || bx.parameter_enable === 0, where + ": " + bx.maxclass + " must not be a parameter");
+                    return;
+                }
+                if (allowed.indexOf(bx.varname) >= 0) {
+                    assert.equal(bx.parameter_enable, 1, where + ": " + bx.varname + " is a parameter");
+                    assert.equal(bx.saved_attribute_attributes.valueof.parameter_longname, bx.varname);
+                    enabled.push(bx.varname);
+                } else {
+                    assert.strictEqual(bx.parameter_enable, 0, where + ": " + (bx.varname || bx.maxclass) + " is UI only and must say parameter_enable 0");
+                }
+            });
+        });
+        assert.deepEqual(enabled.sort(), allowed.slice().sort());
+        assert.equal(Object.keys(top.parameters).length, allowed.length, "patcher.parameters lists exactly the parameters");
+    });
+});
+
 const main = JSON.parse(fs.readFileSync(mainFile, "utf8")).patcher;
 const boxes = main.boxes.map((b) => b.box);
 const byVar = (v) => boxes.find((b) => b.varname === v);
@@ -99,19 +156,22 @@ test("device settings: MIDI effect, 169 px high, opens in presentation mode", ()
     assert.ok(!boxes.some((b) => /^v8(\.|\s|$)/.test(b.text || "")), "no [v8]: Max 9 only");
 });
 
-test("the realtime path is native objects only: midiin -> midiparse -> p snapcore -> midiformat -> midiout", () => {
+test("the realtime path is native objects only: midiin -> status router -> midiparse -> p snapcore -> midiformat -> midiout", () => {
     const text = (id) => boxes.find((b) => b.id === id).text || boxes.find((b) => b.id === id).maxclass;
     const edges = main.lines.map((l) => [text(l.patchline.source[0]), text(l.patchline.destination[0])]);
     const has = (a, b) => edges.some((e) => e[0] === a && e[1] === b);
-    assert.ok(has("midiin", "midiparse"));
+    assert.ok(has("midiin", "t i i"));
+    assert.ok(has("gate 2", "midiparse"));
+    assert.ok(has("gate 2", "midiout"), "non-note messages bypass midiparse/midiformat");
     assert.ok(has("midiparse", "p snapcore"));
     assert.ok(has("p snapcore", "midiformat"));
     assert.ok(has("midiformat", "midiout"));
     assert.ok(has("live.thisdevice", "sel 0"));
-    // CC / program / pressure / bend / channel go straight to midiformat (non-note MIDI unchanged)
+    // CC / program / pressure / bend never reach midiparse (tests/midipath.test.js runs this byte for byte);
+    // only the channel of the parsed note message is handed to midiformat
     const direct = main.lines.filter((l) => text(l.patchline.source[0]) === "midiparse" && text(l.patchline.destination[0]) === "midiformat")
         .map((l) => l.patchline.source[1] + ">" + l.patchline.destination[1]).sort();
-    assert.deepEqual(direct, ["2>2", "3>3", "4>4", "5>5", "6>6"]);
+    assert.deepEqual(direct, ["6>6"]);
     // the js object is not on the note path: nothing flows from js into midiformat/midiout
     const js = boxes.find((b) => /^js /.test(b.text));
     main.lines.filter((l) => l.patchline.source[0] === js.id).forEach((l) => {
@@ -138,7 +198,7 @@ test("[js] object: bundle name, outlet count and every message it receives is a 
     const sent = [];
     boxes.forEach((b) => {
         if (/^prepend /.test(b.text || "")) { sent.push(b.text.split(" ")[1]); }
-        if (b.maxclass === "message") { sent.push(b.text); }
+        if (b.maxclass === "message" && main.lines.some((l) => l.patchline.source[0] === b.id && l.patchline.destination[0] === js.id)) { sent.push(b.text); }
     });
     sent.push("note", "result");
     sent.forEach((s) => assert.ok(fns[s], "script has no function " + s));
@@ -150,7 +210,7 @@ test("[js] object: bundle name, outlet count and every message it receives is a 
 test("script outlets go to the intended UI objects", () => {
     const OUT = {};
     /OUT\s*=\s*\{([^}]*)\}/.exec(jsSource)[1].replace(/(\w+)\s*:\s*(\d+)/g, (_, k, v) => { OUT[k] = Number(v); return ""; });
-    const target = { KEY: "Key", CATEGORY: "Category", SCALES: "SCALE", UID: "Scale ID", STAR: "FAV", KB: "KB",
+    const target = { KEY: "Key", CATEGORY: "Category", SCALES: "SCALE", UID: "UID_SPLIT", STAR: "FAV", KB: "KB",
         INFO: "INFO", RESULTS: "RESULTS", SAME: "SAME", STATUS: "STATUS", AUDIO: "AUDIO" };
     const js = boxes.find((b) => /^js /.test(b.text));
     Object.keys(target).forEach((k) => {
@@ -161,6 +221,19 @@ test("script outlets go to the intended UI objects", () => {
     const map = main.lines.find((x) => x.patchline.source[0] === js.id && x.patchline.source[1] === OUT.MAP);
     assert.equal(boxes.find((b) => b.id === map.patchline.destination[0]).text, "p snapcore");
     assert.equal(map.patchline.destination[1], 2);
+    // the uid list [high mid low] is split onto the three hidden parameters
+    const split = byVar("UID_SPLIT");
+    assert.equal(split.text, "unpack 0 0 0");
+    ["Scale ID 1", "Scale ID 2", "Scale ID 3"].forEach((n, i) => {
+        const l = main.lines.find((x) => x.patchline.source[0] === split.id && x.patchline.source[1] === i);
+        assert.equal(boxes.find((b) => b.id === l.patchline.destination[0]).varname, n);
+    });
+    // and each one reports back to the script with its byte number
+    ["Scale ID 1", "Scale ID 2", "Scale ID 3"].forEach((n, i) => {
+        const l = main.lines.find((x) => x.patchline.source[0] === byVar(n).id);
+        const pp = boxes.find((b) => b.id === l.patchline.destination[0]);
+        assert.equal(pp.text, "prepend scaleuidbyte " + i);
+    });
 });
 
 test("parameters: live.* objects with unique long names, short names, stable ids; hidden Scale ID stored by uid", () => {
@@ -174,18 +247,23 @@ test("parameters: live.* objects with unique long names, short names, stable ids
         assert.equal(b.varname, v.parameter_longname, "varname keeps the parameter id stable");
         assert.ok(main.parameters[b.id], "listed in patcher.parameters");
     });
-    assert.deepEqual(longs.sort(), ["Category", "Correction", "Detect Memory", "Key", "Next Scale", "Power", "Previous Scale", "Scale ID"]);
+    assert.deepEqual(longs.sort(), ["Category", "Correction", "Detect Memory", "Key", "Next Scale", "Power", "Previous Scale", "Scale ID 1", "Scale ID 2", "Scale ID 3"]);
     const v = (n) => byVar(n).saved_attribute_attributes.valueof;
     assert.deepEqual(v("Key").parameter_enum, Scales.NOTE_NAMES);
     assert.deepEqual(v("Category").parameter_enum, ["All Scales", "Favorites"].concat(Scales.CATEGORIES));
     assert.equal(v("Correction").parameter_enum.length, Snap.MODE_NAMES.length);
     assert.equal(v("Power").parameter_initial[0], 1);
-    const id = byVar("Scale ID");
-    assert.equal(id.saved_attribute_attributes.valueof.parameter_invisible, 1, "stored only, not automatable");
-    assert.ok(id.presentation !== 1, "not on the device face");
-    assert.equal(id.saved_attribute_attributes.valueof.parameter_initial[0], Scales.SCALES[0].uid);
-    assert.equal(id.saved_attribute_attributes.valueof.parameter_type, 1);
-    assert.ok(id.saved_attribute_attributes.valueof.parameter_mmax >= Math.max.apply(null, Scales.SCALES.map((s) => s.uid)));
+    // The scale is stored as its 24-bit uid, split into three 8-bit Int parameters (see gen_patcher.py)
+    [["Scale ID 1", 16], ["Scale ID 2", 8], ["Scale ID 3", 0]].forEach(([n, shift]) => {
+        const id = byVar(n);
+        const a = id.saved_attribute_attributes.valueof;
+        assert.equal(a.parameter_invisible, 1, "stored only, not automatable");
+        assert.ok(id.presentation !== 1, "not on the device face");
+        assert.equal(a.parameter_type, 1, "Int");
+        assert.equal(a.parameter_mmin, 0);
+        assert.equal(a.parameter_mmax, 255, "Max for Live's Int type is 0-255: nothing here relies on a wider range");
+        assert.equal(a.parameter_initial[0], (Scales.SCALES[0].uid >> shift) & 255);
+    });
 });
 
 test("the UI has everything the spec asks for", () => {

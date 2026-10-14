@@ -28,6 +28,8 @@ def io_for(text):
         return 2, 1, ["int"]
     if cls == "int":
         return 2, 1, ["int"]
+    if cls == "split":
+        return 3, 2, ["", ""]
     if cls == "gate":
         return 2, int(args[0]), [""] * int(args[0])
     if cls == "uzi":
@@ -162,28 +164,77 @@ class Patcher:
 
     # ---- layout for machine-built sub-patchers
     def autolayout(self, x0=20, y0=20, dx=150, dy=60):
+        """Arrange the boxes in layers, signal flow downwards.
+
+        Inlets go in one row at the top and outlets in one row at the bottom, each with strictly
+        increasing x in index order: Max numbers a sub-patcher's inlets and outlets by their
+        left-to-right position, so equal or swapped x positions would permute the I/O.
+        The wiring may contain loops (a value written back to a table); edges that close a loop
+        are ignored when assigning layers, so the layout is always finite and shallow.
+        """
         self.resolve()
         ids = {b["box"]["id"]: b["box"] for b in self.boxes}
+        order = [b["box"]["id"] for b in self.boxes]
+        succ = {i: [] for i in ids}
+        for l in self.lines:
+            s, d = l["patchline"]["source"][0], l["patchline"]["destination"][0]
+            succ[s].append(d)
+
+        # depth-first search (iterative) to find the edges that point back into the current path
+        back = set()
+        state = {}                          # 1 = on the current path, 2 = done
+        for root in order:
+            if root in state:
+                continue
+            state[root] = 1
+            stack = [(root, iter(succ[root]))]
+            while stack:
+                node, it = stack[-1]
+                for nxt in it:
+                    if state.get(nxt) == 1:
+                        back.add((node, nxt))
+                    elif nxt not in state:
+                        state[nxt] = 1
+                        stack.append((nxt, iter(succ[nxt])))
+                        break
+                else:
+                    state[node] = 2
+                    stack.pop()
+
+        # longest path from a source over the remaining (acyclic) edges
+        indeg = {i: 0 for i in ids}
+        for s, ds in succ.items():
+            for d in ds:
+                if (s, d) not in back:
+                    indeg[d] += 1
         depth = {i: 0 for i in ids}
-        edges = [(l["patchline"]["source"][0], l["patchline"]["destination"][0]) for l in self.lines]
-        for _ in range(len(ids)):          # relax (graph is a DAG; loops are not used)
-            changed = False
-            for s, d in edges:
-                if depth[d] < depth[s] + 1:
-                    depth[d] = depth[s] + 1
-                    changed = True
-            if not changed:
-                break
+        ready = [i for i in order if indeg[i] == 0]
+        while ready:
+            s = ready.pop()
+            for d in succ[s]:
+                if (s, d) in back:
+                    continue
+                depth[d] = max(depth[d], depth[s] + 1)
+                indeg[d] -= 1
+                if indeg[d] == 0:
+                    ready.append(d)
+
+        inlets = sorted((b["box"] for b in self.boxes if b["box"]["maxclass"] == "inlet"), key=lambda b: b["index"])
+        outlets = sorted((b["box"] for b in self.boxes if b["box"]["maxclass"] == "outlet"), key=lambda b: b["index"])
         layers = {}
-        for b in self.boxes:
-            box = b["box"]
-            if box["maxclass"] == "inlet":
-                depth[box["id"]] = 0
-            layers.setdefault(depth[box["id"]], []).append(box)
-        for d, boxes in layers.items():
-            for i, box in enumerate(boxes):
-                box["patching_rect"][0] = float(x0 + i * dx)
-                box["patching_rect"][1] = float(y0 + d * dy)
+        for i in order:
+            box = ids[i]
+            if box["maxclass"] not in ("inlet", "outlet"):
+                layers.setdefault(depth[i] + 1, []).append(box)     # layer 0 is the inlet row
+        for layer, boxes in layers.items():
+            for k, box in enumerate(boxes):
+                box["patching_rect"][0] = float(x0 + k * dx)
+                box["patching_rect"][1] = float(y0 + layer * dy)
+        last = (max(layers) if layers else 0) + 1
+        for row, boxes in ((0, inlets), (last, outlets)):
+            for k, box in enumerate(boxes):
+                box["patching_rect"][0] = float(x0 + k * dx)
+                box["patching_rect"][1] = float(y0 + row * dy)
 
     def to_dict(self, embedded=False, rect=(40.0, 60.0, 900.0, 700.0)):
         self.resolve()

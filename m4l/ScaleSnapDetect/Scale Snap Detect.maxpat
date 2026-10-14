@@ -106,6 +106,7 @@
             18.0
           ],
           "varname": "RESET",
+          "parameter_enable": 0,
           "mode": 0,
           "text": "Reset",
           "id": "obj-2"
@@ -225,6 +226,7 @@
             12.0
           ],
           "varname": "NOTE_0",
+          "parameter_enable": 0,
           "text": "C",
           "fontsize": 8.0,
           "textjustification": 1,
@@ -251,6 +253,7 @@
             12.0
           ],
           "varname": "NOTE_1",
+          "parameter_enable": 0,
           "text": "C#",
           "fontsize": 8.0,
           "textjustification": 1,
@@ -277,6 +280,7 @@
             12.0
           ],
           "varname": "NOTE_2",
+          "parameter_enable": 0,
           "text": "D",
           "fontsize": 8.0,
           "textjustification": 1,
@@ -303,6 +307,7 @@
             12.0
           ],
           "varname": "NOTE_3",
+          "parameter_enable": 0,
           "text": "D#",
           "fontsize": 8.0,
           "textjustification": 1,
@@ -329,6 +334,7 @@
             12.0
           ],
           "varname": "NOTE_4",
+          "parameter_enable": 0,
           "text": "E",
           "fontsize": 8.0,
           "textjustification": 1,
@@ -355,6 +361,7 @@
             12.0
           ],
           "varname": "NOTE_5",
+          "parameter_enable": 0,
           "text": "F",
           "fontsize": 8.0,
           "textjustification": 1,
@@ -381,6 +388,7 @@
             12.0
           ],
           "varname": "NOTE_6",
+          "parameter_enable": 0,
           "text": "F#",
           "fontsize": 8.0,
           "textjustification": 1,
@@ -407,6 +415,7 @@
             12.0
           ],
           "varname": "NOTE_7",
+          "parameter_enable": 0,
           "text": "G",
           "fontsize": 8.0,
           "textjustification": 1,
@@ -433,6 +442,7 @@
             12.0
           ],
           "varname": "NOTE_8",
+          "parameter_enable": 0,
           "text": "G#",
           "fontsize": 8.0,
           "textjustification": 1,
@@ -459,6 +469,7 @@
             12.0
           ],
           "varname": "NOTE_9",
+          "parameter_enable": 0,
           "text": "A",
           "fontsize": 8.0,
           "textjustification": 1,
@@ -485,6 +496,7 @@
             12.0
           ],
           "varname": "NOTE_10",
+          "parameter_enable": 0,
           "text": "A#",
           "fontsize": 8.0,
           "textjustification": 1,
@@ -511,6 +523,7 @@
             12.0
           ],
           "varname": "NOTE_11",
+          "parameter_enable": 0,
           "text": "B",
           "fontsize": 8.0,
           "textjustification": 1,
@@ -537,6 +550,7 @@
             14.0
           ],
           "varname": "STATUS",
+          "parameter_enable": 0,
           "text": "Listening...",
           "fontsize": 9.0,
           "id": "obj-17"
@@ -610,6 +624,7 @@
             14.0
           ],
           "varname": "GATE_LABEL",
+          "parameter_enable": 0,
           "text": "Gate",
           "fontsize": 9.0,
           "id": "obj-19"
@@ -678,6 +693,7 @@
             18.0
           ],
           "varname": "ROW1",
+          "parameter_enable": 0,
           "text": "",
           "fontsize": 11.0,
           "id": "obj-21"
@@ -703,6 +719,7 @@
             14.0
           ],
           "varname": "ROW2",
+          "parameter_enable": 0,
           "text": "",
           "fontsize": 9.0,
           "id": "obj-22"
@@ -728,6 +745,7 @@
             14.0
           ],
           "varname": "ROW3",
+          "parameter_enable": 0,
           "text": "",
           "fontsize": 9.0,
           "id": "obj-23"
@@ -753,6 +771,7 @@
             14.0
           ],
           "varname": "ROW4",
+          "parameter_enable": 0,
           "text": "",
           "fontsize": 9.0,
           "id": "obj-24"
@@ -778,6 +797,7 @@
             14.0
           ],
           "varname": "ROW5",
+          "parameter_enable": 0,
           "text": "",
           "fontsize": 9.0,
           "id": "obj-25"
@@ -803,6 +823,7 @@
             30.0
           ],
           "varname": "SAME",
+          "parameter_enable": 0,
           "text": "",
           "fontsize": 9.0,
           "id": "obj-26"
@@ -828,6 +849,7 @@
             34.0
           ],
           "varname": "INFO",
+          "parameter_enable": 0,
           "text": "Audio passes through unchanged. Turn on Send to Scale Snap, then press Apply in the Scale Snap device.",
           "fontsize": 9.0,
           "id": "obj-27"
