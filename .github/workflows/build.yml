@@ -16,6 +16,24 @@ jobs:
           cmake --build build
           ctest --test-dir build --output-on-failure
 
+  processor-tests:
+    # The tests that need JUCE: legacy plugin state restore through the real processor, no heap use in processBlock.
+    # Builds only the test target (not the VST3), so it stays quick; JUCE comes in through FetchContent as usual.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install JUCE's Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev \
+            libxcomposite-dev libxext-dev libfreetype-dev libfontconfig1-dev
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSCALESNAP_BUILD_PLUGIN=ON -DSCALESNAP_BUILD_PROCESSOR_TESTS=ON
+      - name: Build the processor tests
+        run: cmake --build build --target ScaleSnapProcessorTests --parallel
+      - name: Run the processor tests
+        run: ctest --test-dir build --output-on-failure -R ScaleSnapProcessorTests
+
   macos:
     needs: tests
     runs-on: macos-14
@@ -57,4 +75,38 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ScaleSnap-Windows
+          path: out
+
+  m4l:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Generated files are up to date
+        run: |
+          python3 m4l/tools/gen_scales.py --check
+          python3 m4l/tools/gen_patcher.py --check
+          python3 m4l/tools/gen_patcher_detect.py --check
+          python3 m4l/tools/gen_golden.py --check
+      - name: Install NumPy (offline audio-analysis check)
+        run: python3 -m pip install numpy
+      - name: Audio detection parameters (synthesised scales and chords -> chromagram -> expected key first)
+        run: python3 m4l/tools/check_chroma.py
+      - name: Node tests (snapping parity with C++, patcher simulation, detection, audio detection, favorites, clips, .amxd)
+        run: node m4l/tests/run.js
+      - name: Build the frozen Max for Live devices (one self-contained .amxd each)
+        run: |
+          python3 m4l/tools/build_amxd.py
+          python3 m4l/tools/build_amxd.py --verify "m4l/dist/Scale Snap.amxd"
+          python3 m4l/tools/build_amxd.py --verify "m4l/dist/Scale Snap Detect.amxd"
+          test "$(LC_ALL=C ls m4l/dist)" = "$(printf 'Scale Snap Detect.amxd\nScale Snap.amxd')"
+      - name: Stage the download (the two devices and the install note)
+        run: |
+          mkdir out
+          cp m4l/dist/*.amxd m4l/INSTALL.md out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScaleSnap-M4L
           path: out

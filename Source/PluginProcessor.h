@@ -41,7 +41,13 @@ public:
     std::array<std::atomic<bool>, 128> outputActive {};
 
 private:
+    inline static const juce::Identifier scaleIdProperty { "scaleId" };
+
     void handleMidi (const juce::MidiMessage& msg, int samplePos, juce::MidiBuffer& out);
+
+    static constexpr size_t midiOutReserveBytes = 16384;
+
+    juce::MidiBuffer midiOut; // reused every block; see processBlock()
 
     scalesnap::ScaleEngine engine;
     scalesnap::NoteTracker tracker;

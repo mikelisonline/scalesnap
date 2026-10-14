@@ -52,6 +52,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout ScaleSnapProcessor::createPa
 void ScaleSnapProcessor::prepareToPlay (double, int)
 {
     tracker.clear();
+    // Reserve room for the output up front: addEvent() on a buffer that has to grow would
+    // allocate on the audio thread.
+    midiOut.clear();
+    midiOut.ensureSize (midiOutReserveBytes);
     for (auto& a : inputActive)  a = false;
     for (auto& a : outputActive) a = false;
 }
@@ -72,11 +76,12 @@ void ScaleSnapProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
     engine.setScale ((int) rootParam->load(), (int) scaleParam->load());
 
-    juce::MidiBuffer out;
+    // A member rather than a local, so the audio thread does not allocate a buffer every block.
+    midiOut.clear();
     for (const auto metadata : midi)
-        handleMidi (metadata.getMessage(), metadata.samplePosition, out);
+        handleMidi (metadata.getMessage(), metadata.samplePosition, midiOut);
 
-    midi.swapWith (out);
+    midi.swapWith (midiOut);
 
     for (int n = 0; n < 128; ++n)
     {
@@ -155,15 +160,45 @@ juce::AudioProcessorEditor* ScaleSnapProcessor::createEditor()
 
 void ScaleSnapProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (auto xml = parameters.copyState().createXml())
+    auto state = parameters.copyState();
+
+    // The scale parameter only stores a position in the scale list, which can change between
+    // versions, so the scale's stable id is saved as well and wins when the state is loaded.
+    const auto& scales = scalesnap::getScales();
+    const int index = juce::jlimit (0, (int) scales.size() - 1, (int) scaleParam->load());
+    state.setProperty (scaleIdProperty, juce::String (scales[(size_t) index].id), nullptr);
+
+    if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
 void ScaleSnapProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    if (auto xml = getXmlFromBinary (data, sizeInBytes))
-        if (xml->hasTagName (parameters.state.getType()))
-            parameters.replaceState (juce::ValueTree::fromXml (*xml));
+    auto xml = getXmlFromBinary (data, sizeInBytes);
+    if (xml == nullptr || ! xml->hasTagName (parameters.state.getType()))
+        return;
+
+    const auto newState = juce::ValueTree::fromXml (*xml);
+    parameters.replaceState (newState);
+
+    int index = -1;
+
+    if (newState.hasProperty (scaleIdProperty))
+    {
+        index = scalesnap::findScaleIndexById (newState[scaleIdProperty].toString().toRawUTF8());
+    }
+    else
+    {
+        // State saved by the first release: no id, only the position in its 16-entry list.
+        const auto savedScale = newState.getChildWithProperty ("id", "scale");
+
+        if (savedScale.isValid() && savedScale.hasProperty ("value"))
+            index = scalesnap::legacyScaleIndexToIndex (juce::roundToInt ((float) savedScale["value"]));
+    }
+
+    if (index >= 0)
+        if (auto* param = parameters.getParameter ("scale"))
+            param->setValueNotifyingHost (param->convertTo0to1 ((float) index));
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

@@ -11,6 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(SCALESNAP_BUILD_PLUGIN "Build the plugin (needs JUCE)" ON)
 option(SCALESNAP_BUILD_TESTS "Build the unit tests" ON)
+option(SCALESNAP_BUILD_PROCESSOR_TESTS "Also build the tests that need JUCE (plugin state restore, audio thread)" OFF)
 set(SCALESNAP_JUCE_PATH "" CACHE PATH "Use a local JUCE checkout instead of downloading it")
 
 if(SCALESNAP_BUILD_TESTS)
@@ -48,13 +49,14 @@ juce_add_plugin(ScaleSnap
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE # for the scale search box
     VST3_CATEGORIES Instrument Tools
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
 target_sources(ScaleSnap PRIVATE
     Source/PluginProcessor.cpp
-    Source/PluginEditor.cpp)
+    Source/PluginEditor.cpp
+    Source/Favorites.cpp)
 
 target_compile_definitions(ScaleSnap PUBLIC
     JUCE_WEB_BROWSER=0
@@ -69,3 +71,24 @@ target_link_libraries(ScaleSnap
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+if(SCALESNAP_BUILD_TESTS AND SCALESNAP_BUILD_PROCESSOR_TESTS)
+    juce_add_console_app(ScaleSnapProcessorTests PRODUCT_NAME "ScaleSnapProcessorTests")
+    target_sources(ScaleSnapProcessorTests PRIVATE
+        Tests/ProcessorTests.cpp
+        Source/PluginProcessor.cpp
+        Source/PluginEditor.cpp
+        Source/Favorites.cpp)
+    target_include_directories(ScaleSnapProcessorTests PRIVATE Source)
+    target_compile_definitions(ScaleSnapProcessorTests PRIVATE
+        JucePlugin_Name="Scale Snap"
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0)
+    target_link_libraries(ScaleSnapProcessorTests
+        PRIVATE
+            juce::juce_audio_utils
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+    add_test(NAME ScaleSnapProcessorTests COMMAND ScaleSnapProcessorTests)
+endif()
