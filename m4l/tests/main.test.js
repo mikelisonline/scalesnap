@@ -15,6 +15,9 @@ function mapTable(env) {
     env.on(OUT.MAP).forEach((a) => { t[a[0]] = a[1]; });
     return t;
 }
+// The scale id goes to three hidden 8-bit parameters: the script sends [high mid low].
+const uidOf = (a) => (a[0] << 16) | (a[1] << 8) | a[2];
+const lastUid = (env) => { const m = env.on(OUT.UID); return m.length ? uidOf(m[m.length - 1]) : null; };
 const text = (env, out) => { const m = env.on(out); return m.length ? m[m.length - 1].slice(1).join(" ") : null; };
 
 test("bundle loads without require/module and declares 12 outlets", () => {
@@ -77,7 +80,7 @@ test("scale selection by menu position and by stable uid", () => {
     env.clear();
     env.call("scalemenu", 1);
     const idx = japanese[1];
-    assert.deepEqual(env.on(OUT.UID).pop(), [Scales.SCALES[idx].uid]);
+    assert.equal(lastUid(env), Scales.SCALES[idx].uid);
     assert.match(text(env, OUT.INFO), new RegExp("^" + Scales.SCALES[idx].name.split(" ")[0]));
     const t = mapTable(env);
     const want = Snap.encodeMap(Snap.buildMap(0, Scales.SCALES[idx].mask, 0));
@@ -85,11 +88,53 @@ test("scale selection by menu position and by stable uid", () => {
 
     env.clear();
     env.call("scaleuid", Scales.SCALES[7].uid);          // restore from a saved Live Set
-    assert.deepEqual(env.on(OUT.UID).pop(), [Scales.SCALES[7].uid]);
+    assert.equal(lastUid(env), Scales.SCALES[7].uid);
     env.clear();
     env.call("scaleuid", Scales.SCALES[7].uid);          // echo of our own output: no-op (no loop)
     assert.equal(env.out.length, 0);
     env.call("scaleuid", 12345);                         // unknown uid ignored
+    assert.equal(env.out.length, 0);
+});
+
+test("Scale ID: 24-bit uid <-> three 8-bit Int parameters, exact for every scale and robust to quantisation", () => {
+    // What the device does with a stored Set: Live hands back each hidden parameter as a number in 0..255
+    // (an Int parameter; Max for Live's Int type is 0-255), possibly as a float that only needs rounding.
+    Scales.SCALES.forEach((sc) => {
+        const env = createEnv();
+        env.call("loaded"); env.clear();
+        env.call("scaleuid", Scales.SCALES[sc === Scales.SCALES[0] ? 1 : 0].uid);   // be somewhere else first
+        env.clear();
+        env.call("scaleuid", sc.uid);                                              // what the script writes ...
+        const bytes = env.on(OUT.UID).pop();
+        assert.equal(bytes.length, 3, sc.id);
+        bytes.forEach((b) => assert.ok(Number.isInteger(b) && b >= 0 && b <= 255, sc.id + " byte " + b));
+        assert.equal(uidOf(bytes), sc.uid);
+
+        // ... and what comes back from a Set, in every arrival order, with float noise
+        const orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+        orders.forEach((order, oi) => {
+            const e2 = createEnv();
+            e2.call("loaded"); e2.clear();
+            order.forEach((k) => e2.call("scaleuidbyte", k, bytes[k] + (oi % 2 ? 0.3 : -0.3)));
+            assert.equal(e2.ctx.ss.scaleIndex, Scales.indexByUid(sc.uid), sc.id + " order " + order.join(""));
+            assert.equal(lastUid(e2) === null || lastUid(e2) === sc.uid, true, "no wrong scale is announced at the end");
+        });
+    });
+});
+
+test("Scale ID bytes: out-of-range and unknown values are ignored; our own echo does nothing", () => {
+    const env = createEnv();
+    env.call("loaded");
+    env.call("scaleuid", Scales.SCALES[7].uid);
+    const bytes = env.on(OUT.UID).pop();
+    env.clear();
+    bytes.forEach((b, k) => env.call("scaleuidbyte", k, b));    // the three parameters report what we just wrote
+    assert.equal(env.out.length, 0, "echo of our own output is a no-op");
+    env.call("scaleuidbyte", 2, (bytes[2] + 1) & 255);          // a uid that no scale has
+    assert.equal(env.ctx.ss.scaleIndex, 7);
+    env.call("scaleuidbyte", 5, 3);                             // not a byte number
+    env.call("scaleuidbyte", 0, "x");
+    assert.equal(env.ctx.ss.scaleIndex, 7);
     assert.equal(env.out.length, 0);
 });
 
@@ -111,13 +156,13 @@ test("prev/next step through the filtered list and wrap around", () => {
     env.call("category", 2);                              // Major & Modes (11)
     const list = Scales.indicesInCategory("Major & Modes");
     env.call("prev");                                     // from index 0: wraps to the last
-    assert.deepEqual(env.on(OUT.UID).pop(), [Scales.SCALES[list[list.length - 1]].uid]);
+    assert.equal(lastUid(env), Scales.SCALES[list[list.length - 1]].uid);
     env.call("next");
-    assert.deepEqual(env.on(OUT.UID).pop(), [Scales.SCALES[list[0]].uid]);
+    assert.equal(lastUid(env), Scales.SCALES[list[0]].uid);
     env.call("category", 2 + Scales.CATEGORIES.indexOf("Persian"));
     env.clear();
     env.call("next");                                     // current scale not in list: jump to its first
-    assert.deepEqual(env.on(OUT.UID).pop(), [Scales.SCALES[Scales.indicesInCategory("Persian")[0]].uid]);
+    assert.equal(lastUid(env), Scales.SCALES[Scales.indicesInCategory("Persian")[0]].uid);
 });
 
 test("favorites: toggle persists, star updates, Favorites category lists them, other devices are notified", () => {
@@ -207,7 +252,7 @@ test("apply of a scale outside the current category switches to All Scales", () 
     env.call("audioapply");
     assert.deepEqual(env.on(OUT.CATEGORY).pop(), [0]);
     assert.deepEqual(env.on(OUT.KEY).pop(), [9]);
-    assert.deepEqual(env.on(OUT.UID).pop(), [Scales.SCALES[Scales.indexById("minor_pentatonic")].uid]);
+    assert.equal(lastUid(env), Scales.SCALES[Scales.indexById("minor_pentatonic")].uid);
 });
 
 test("audio result parsing: multi-word track names, empty results, unknown scales", () => {
@@ -215,12 +260,74 @@ test("audio result parsing: multi-word track names, empty results, unknown scale
     env.call("loaded"); env.clear();
     env.call("result", "My", "Bass", "Track", 4, "phrygian", 80);
     assert.equal(text(env, OUT.AUDIO), "Audio (My Bass Track): E Phrygian 80%");
-    env.call("result", "Bass");                           // cleared
+    env.call("result", "My", "Bass", "Track");            // cleared by the same device
     assert.deepEqual(env.on(OUT.AUDIO).pop(), ["set"]);
     env.call("audioapply");
     assert.match(text(env, OUT.STATUS), /No audio result/);
-    env.call("result", "Bass", 4, "no_such_scale", 80);
+    env.clear();
+    env.call("result", "Bass", 4, "no_such_scale", 80);   // not a result: shows nothing
+    assert.ok(!env.on(OUT.AUDIO).some((a) => a[0] === "set" && a.length > 1));
+});
+
+test("Fav pressed while the Favorites category is shown refreshes the Scale menu and Prev/Next", () => {
+    const env = createEnv();
+    env.call("loaded");
+    const appended = () => env.on(OUT.SCALES).filter((a) => a[0] === "append").map((a) => a.slice(1).join(" "));
+    const dorian = Scales.indexById("dorian"), hirajoshi = Scales.indexById("hirajoshi");
+    env.call("scaleuid", Scales.SCALES[dorian].uid); env.call("togglefav");
+    env.call("scaleuid", Scales.SCALES[hirajoshi].uid); env.call("togglefav");
+    env.call("favchanged");                                // Max delivers our own broadcast back to us
+    env.call("category", 1);                               // Favorites: [Dorian, Hirajoshi]
+    env.clear();
+    env.call("category", 1);
+    assert.deepEqual(appended(), ["Dorian", "Hirajoshi"]);
+
+    // un-favorite the current scale (Hirajoshi): it leaves the menu at once, selection shows nothing
+    env.clear();
+    env.call("togglefav");
+    env.call("favchanged");
+    assert.deepEqual(appended(), ["Dorian"], "menu rebuilt without Hirajoshi");
+    assert.deepEqual(env.on(OUT.SCALES).pop(), ["set", -1]);
+    assert.deepEqual(env.on(OUT.STAR).pop(), ["set", 0]);
+    env.clear();
+    env.call("next");                                      // Prev/Next only know the remaining favorite
+    assert.equal(lastUid(env), Scales.SCALES[dorian].uid);
+
+    // favorite another scale while in Favorites: it appears at once
+    env.call("category", 0);
+    env.call("scaleuid", Scales.SCALES[Scales.indexById("blues")].uid);
+    env.call("category", 1);
+    env.clear();
+    env.call("togglefav");
+    env.call("favchanged");
+    assert.deepEqual(appended().sort(), ["Blues", "Dorian"]);
+    assert.deepEqual(env.on(OUT.SCALES).pop(), ["set", env.ctx.ss.list.indexOf(Scales.indexById("blues"))]);
+    assert.equal(env.ctx.ss.list.length, 2);
+});
+
+test("a clear from one Detect device only clears its own result; others stay", () => {
+    const env = createEnv();
+    env.call("loaded"); env.clear();
+    env.call("result", "Keys", 9, "natural_minor", 74);
+    assert.equal(text(env, OUT.AUDIO), "Audio (Keys): A Natural Minor 74%");
+
+    env.clear();
+    env.call("result", "Bass");                           // Bass has nothing to show (Send off / silent)
+    assert.equal(env.on(OUT.AUDIO).length, 0, "the line for Keys is not touched");
+    env.call("audioapply");
+    assert.equal(text(env, OUT.STATUS), "Applied audio result", "Keys' result is still current");
+    assert.deepEqual(env.on(OUT.KEY).pop(), [9]);
+
+    // several tracks: the most recent non-empty one is shown, and clearing it falls back to the other
+    env.call("result", "Bass", 4, "phrygian", 80);
+    assert.equal(text(env, OUT.AUDIO), "Audio (Bass): E Phrygian 80%");
+    env.call("result", "Bass");
+    assert.equal(text(env, OUT.AUDIO), "Audio (Keys): A Natural Minor 74%");
+    env.call("result", "Keys");
     assert.deepEqual(env.on(OUT.AUDIO).pop(), ["set"]);
+    env.clear();
+    env.call("audioapply");
+    assert.match(text(env, OUT.STATUS), /No audio result/);
 });
 
 test("Snap Clip / Analyze Clip use the Live API and report in the status line", () => {

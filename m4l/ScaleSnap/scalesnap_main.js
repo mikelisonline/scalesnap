@@ -11,14 +11,17 @@
  *   loaded                 device initialised (live.thisdevice)
  *   key n | mode n | power n | category n   UI controls (n = menu index / 0,1)
  *   scalemenu n            Scale menu pick (n = position in the filtered list)
- *   scaleuid n             stored Scale ID parameter (restore / automation)
+ *   scaleuidbyte k v      one of the three hidden Scale ID parameters (k = 0 high, 1 mid, 2 low byte of the
+ *                          scale's 24-bit uid; v = its value 0..255): restore of a saved Set
+ *   scaleuid n             the whole uid at once (same effect; not used by the patcher)
  *   prev | next | togglefav
  *   note pitch vel         copy of the incoming note stream (pre-snap) for detection
  *   listen n | reset | memory n | analyze | resultselect n | apply | snapclip
  *   result <track> ...     audio detection broadcast (see m4l-shared-interface)
  *   audioapply | favchanged
  * Outlets: 0 = snap table writes ("index value", value = output note + 1, 0 = blocked) and
- *          1..11 = one per UI object (see OUT).
+ *          1..11 = one per UI object (see OUT). UID sends the list "high mid low", which the patcher
+ *          unpacks onto the three Scale ID parameters.
  */
 inlets = 1;
 outlets = 12;
@@ -39,6 +42,7 @@ var ss = {
     power: 1,
     category: 0,
     scaleIndex: 0,
+    uidBytes: uidToBytes(ScaleSnapScales.SCALES[0].uid), // what the three Scale ID parameters hold
     list: [],            // library indices shown in the Scale menu
     sent: [],            // last table values written to the patcher (to send only differences)
     scaleMap: null,      // plain snap map for the current scale (-1 = blocked); used by Snap Clip
@@ -48,7 +52,9 @@ var ss = {
     listening: false,
     groups: [],
     selected: 0,
-    audio: null,
+    audio: null,         // result shown: { track, tops } or null
+    audioByTrack: {},    // "t:<track name>" -> { track, tops, seq } for every Detect device that has a result
+    audioSeq: 0,
     tickTask: null,
     initTask: null,
     ticks: 0
@@ -82,6 +88,10 @@ function categoryName(c) {
     if (c === CATEGORY_FAVORITES) { return "Favorites"; }
     return ScaleSnapScales.CATEGORIES[c - 2];
 }
+
+/** The uid is a 24-bit hash. It is stored in three Int parameters of 8 bits each: Max for Live's Int type
+ *  is 0-255, so every stored value is exactly representable and no float rounding can change the id. */
+function uidToBytes(uid) { return [(uid >> 16) & 255, (uid >> 8) & 255, uid & 255]; }
 
 function validScaleId(id) { return ScaleSnapScales.indexById(id) >= 0; }
 
@@ -156,7 +166,8 @@ function favSignature() { return ss.favs ? ss.favs.list().join("|") : ""; }
 
 // ------------------------------------------------------------------------------------ state changes
 
-function setScale(index, force) {
+/** `fromParams`: the change came from the Scale ID parameters, which already hold the value (no write-back). */
+function setScale(index, force, fromParams) {
     if (index < 0 || index >= ScaleSnapScales.SCALES.length) { return; }
     if (index === ss.scaleIndex && !force) { return; }
     ss.scaleIndex = index;
@@ -165,7 +176,8 @@ function setScale(index, force) {
     updateInfo();
     updateStar();
     updateScaleSelection();
-    outlet(OUT.UID, ScaleSnapScales.SCALES[index].uid);
+    ss.uidBytes = uidToBytes(ScaleSnapScales.SCALES[index].uid);
+    if (!fromParams) { outlet(OUT.UID, ss.uidBytes.slice()); }
 }
 
 function setKey(root) {
@@ -224,6 +236,17 @@ function scaleuid(uid) {
     if (idx >= 0) { setScale(idx, false); }
 }
 
+/** One Scale ID parameter reports a value (a restored Set, or the echo of what we wrote). The scale
+ *  changes once the three bytes together are the uid of a scale; partial states are ignored. */
+function scaleuidbyte(k, v) {
+    k = Math.floor(Number(k));
+    v = Math.round(Number(v));
+    if (!(k >= 0 && k <= 2) || isNaN(v)) { return; }
+    ss.uidBytes[k] = clampInt(v, 0, 255);
+    var idx = ScaleSnapScales.indexByUid((ss.uidBytes[0] << 16) | (ss.uidBytes[1] << 8) | ss.uidBytes[2]);
+    if (idx >= 0) { setScale(idx, false, true); }
+}
+
 function step(dir) {
     if (ss.list.length === 0) { return; }
     var pos = ss.list.indexOf(ss.scaleIndex), next;
@@ -242,6 +265,9 @@ function togglefav() {
     ss.favSig = favSignature();
     if (ss.favs.lastError) { sendText(OUT.STATUS, "set", "Favorites not saved: " + ss.favs.lastError); ss.favs.lastError = ""; }
     updateStar();
+    // Our own broadcast comes back to favchanged() and is ignored (the signature already matches),
+    // so a menu that lists the favorites has to be refreshed here.
+    if (ss.category === CATEGORY_FAVORITES) { rebuildScaleMenu(); }
     messnamed("scalesnap.favorites", "changed");
 }
 
@@ -370,14 +396,23 @@ function result() {
         tops.unshift({ root: a[end - 3], scaleId: String(a[end - 2]), pct: a[end - 1] });
         end -= 3;
     }
-    var track = a.slice(0, end).join(" ");
-    if (tops.length === 0) {
-        ss.audio = null;
-        sendText(OUT.AUDIO, "set", "");
-        return;
+    var track = a.slice(0, end).join(" ") || "Audio";
+    var key = "t:" + track;
+    // One entry per Detect device (by track name). A clear only removes that device's own entry.
+    if (tops.length === 0) { delete ss.audioByTrack[key]; }
+    else { ss.audioByTrack[key] = { track: track, tops: tops, seq: ++ss.audioSeq }; }
+    var shown = null;                                     // the most recent result still held
+    for (var k in ss.audioByTrack) {
+        if (ss.audioByTrack.hasOwnProperty(k) && (!shown || ss.audioByTrack[k].seq > shown.seq)) { shown = ss.audioByTrack[k]; }
     }
-    ss.audio = { track: track || "Audio", tops: tops };
-    var t = tops[0], s = ScaleSnapScales.SCALES[ScaleSnapScales.indexById(t.scaleId)];
+    if (shown === ss.audio) { return; }                   // a clear from another device: nothing to change
+    ss.audio = shown;
+    showAudio();
+}
+
+function showAudio() {
+    if (!ss.audio) { sendText(OUT.AUDIO, "set", ""); return; }
+    var t = ss.audio.tops[0], s = ScaleSnapScales.SCALES[ScaleSnapScales.indexById(t.scaleId)];
     sendText(OUT.AUDIO, "set", "Audio (" + ss.audio.track + "): " + ScaleSnapScales.NOTE_NAMES[t.root] + " " +
              s.name + " " + t.pct + "%");
 }
