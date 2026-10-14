@@ -30,7 +30,9 @@ jobs:
         run: |
           codesign --force --deep --sign - "VST3/Scale Snap.vst3"
           mkdir -p "$GITHUB_WORKSPACE/out"
-          cp -R "VST3/Scale Snap.vst3" "$GITHUB_WORKSPACE/out/"
+          # upload-artifact drops Unix permissions/symlinks, so ship a ditto zip
+          # (preserves the executable bit) inside the artifact.
+          ditto -c -k --sequesterRsrc --keepParent "VST3/Scale Snap.vst3" "$GITHUB_WORKSPACE/out/ScaleSnap-macOS.zip"
           cp "$GITHUB_WORKSPACE/README.md" "$GITHUB_WORKSPACE/out/"
       - uses: actions/upload-artifact@v4
         with:
@@ -47,11 +49,11 @@ jobs:
           cmake -S . -B build -A x64 -DSCALESNAP_BUILD_TESTS=OFF
           cmake --build build --config Release --parallel
       - name: Package
-        shell: bash
+        shell: pwsh
         run: |
-          mkdir -p out
-          cp -R "build/ScaleSnap_artefacts/Release/VST3/Scale Snap.vst3" out/
-          cp README.md out/
+          New-Item -ItemType Directory -Force out | Out-Null
+          Compress-Archive -Path "build/ScaleSnap_artefacts/Release/VST3/Scale Snap.vst3" -DestinationPath out/ScaleSnap-Windows.zip
+          Copy-Item README.md out/
       - uses: actions/upload-artifact@v4
         with:
           name: ScaleSnap-Windows

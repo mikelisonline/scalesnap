@@ -28,7 +28,8 @@ Everything else (pitch bend, mod wheel, sustain pedal, aftertouch) passes straig
 ## Installing
 
 Download the build from this repo's **Actions** tab (latest "Build" workflow run →
-Artifacts → `ScaleSnap-macOS` or `ScaleSnap-Windows`), unzip, then:
+Artifacts → `ScaleSnap-macOS` or `ScaleSnap-Windows`), unzip it, then unzip the inner `ScaleSnap-macOS.zip` /
+`ScaleSnap-Windows.zip` (this keeps file permissions intact), then:
 
 **Mac**: copy `Scale Snap.vst3` to `~/Library/Audio/Plug-Ins/VST3/`. The plugin isn't
 notarized by Apple, so clear the "downloaded from the internet" flag once in Terminal:
