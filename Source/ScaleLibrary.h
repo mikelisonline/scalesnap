@@ -13,8 +13,11 @@
 // once released, because saved sessions and favorites refer to scales by id. The plugin state
 // stores the id, so the list order may change; only host automation of the Scale parameter
 // refers to the list position, so prefer adding new scales at the end of their category.
+// State saved by the first release has no id, only a position in its 16-entry list; see
+// getLegacyScaleIds() / legacyScaleIndexToIndex().
 // This table was generated from a reviewed list of scales; keep rows grouped by category.
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
@@ -264,6 +267,30 @@ inline int findScaleIndexById (const char* id)
             return (int) i;
 
     return -1;
+}
+
+/** The scales of the first release, in the order of its 16-entry list.
+    That release saved only the position in this list (there was no scale id), and host
+    automation of the Scale parameter was written against it. This table is frozen: never edit it. */
+inline const std::array<const char*, 16>& getLegacyScaleIds()
+{
+    static const std::array<const char*, 16> ids {{ "major", "natural_minor", "harmonic_minor", "melodic_minor",
+                                                    "dorian", "phrygian", "lydian", "mixolydian", "locrian",
+                                                    "phrygian_dominant", "major_pentatonic", "minor_pentatonic",
+                                                    "blues", "harmonic_major", "whole_tone", "chromatic" }};
+    return ids;
+}
+
+/** Position in getScales() of the scale that sat at this position in the first release's list,
+    or -1 if the first release had no such position. */
+inline int legacyScaleIndexToIndex (int legacyIndex)
+{
+    const auto& ids = getLegacyScaleIds();
+
+    if (legacyIndex < 0 || legacyIndex >= (int) ids.size())
+        return -1;
+
+    return findScaleIndexById (ids[(size_t) legacyIndex]);
 }
 
 } // namespace scalesnap

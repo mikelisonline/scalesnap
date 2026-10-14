@@ -188,11 +188,58 @@ static void testLibrary()
         CHECK_EQ (known, true);
     }
 
-    // Scale ids that older versions saved must still resolve.
+    // The 16 scales that the first release offered must all still exist, by id.
     for (auto* id : { "major", "natural_minor", "harmonic_minor", "melodic_minor", "dorian", "phrygian",
                       "lydian", "mixolydian", "locrian", "phrygian_dominant", "major_pentatonic",
                       "minor_pentatonic", "blues", "harmonic_major", "whole_tone", "chromatic" })
         CHECK_EQ ((int) (findScaleIndexById (id) >= 0), 1);
+
+    // The first release saved only the position of the scale in its own 16-entry list (no id), and
+    // host automation of the Scale parameter was written against that list. Loading such state must
+    // map each position to the same scale in today's list, which is ordered differently.
+    {
+        const auto& legacy = getLegacyScaleIds();
+        CHECK_EQ ((int) legacy.size(), 16);
+        CHECK_EQ ((int) (std::string_view (legacy[0]) == "major"), 1);
+        CHECK_EQ ((int) (std::string_view (legacy[1]) == "natural_minor"), 1);
+        CHECK_EQ ((int) (std::string_view (legacy[15]) == "chromatic"), 1);
+
+        for (size_t i = 0; i < legacy.size(); ++i)
+        {
+            const int mapped = legacyScaleIndexToIndex ((int) i);
+            CHECK_EQ ((int) (mapped >= 0 && mapped < (int) scales.size()), 1);
+            if (mapped >= 0 && mapped < (int) scales.size())
+                CHECK_EQ ((int) (std::string_view (scales[(size_t) mapped].id) == legacy[i]), 1);
+        }
+
+        // Each position still plays the same notes as the first release did (masks copied from it).
+        const uint16_t legacyMasks[16] = {
+            makeMask ({ 0, 2, 4, 5, 7, 9, 11 }), makeMask ({ 0, 2, 3, 5, 7, 8, 10 }),
+            makeMask ({ 0, 2, 3, 5, 7, 8, 11 }), makeMask ({ 0, 2, 3, 5, 7, 9, 11 }),
+            makeMask ({ 0, 2, 3, 5, 7, 9, 10 }), makeMask ({ 0, 1, 3, 5, 7, 8, 10 }),
+            makeMask ({ 0, 2, 4, 6, 7, 9, 11 }), makeMask ({ 0, 2, 4, 5, 7, 9, 10 }),
+            makeMask ({ 0, 1, 3, 5, 6, 8, 10 }), makeMask ({ 0, 1, 4, 5, 7, 8, 10 }),
+            makeMask ({ 0, 2, 4, 7, 9 }),        makeMask ({ 0, 3, 5, 7, 10 }),
+            makeMask ({ 0, 3, 5, 6, 7, 10 }),    makeMask ({ 0, 2, 4, 5, 7, 8, 11 }),
+            makeMask ({ 0, 2, 4, 6, 8, 10 }),    makeMask ({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }) };
+        for (int i = 0; i < 16; ++i)
+        {
+            const int mapped = legacyScaleIndexToIndex (i);
+            if (mapped >= 0)
+                CHECK_EQ ((int) scales[(size_t) mapped].mask, (int) legacyMasks[i]);
+        }
+
+        // The cases that used to load as the wrong scale.
+        CHECK_EQ (legacyScaleIndexToIndex (1), scaleIndex ("natural_minor"));
+        CHECK_EQ (legacyScaleIndexToIndex (4), scaleIndex ("dorian"));
+        CHECK_EQ (legacyScaleIndexToIndex (11), scaleIndex ("minor_pentatonic"));
+        CHECK_EQ (legacyScaleIndexToIndex (15), scaleIndex ("chromatic"));
+        CHECK_EQ ((int) (legacyScaleIndexToIndex (1) != 1), 1); // the list really did move
+
+        // Positions the old list never had cannot be mapped.
+        CHECK_EQ (legacyScaleIndexToIndex (-1), -1);
+        CHECK_EQ (legacyScaleIndexToIndex (16), -1);
+    }
 
     // Every category in the browser has at least one scale, and the first one is Major & Modes.
     CHECK_EQ ((int) (std::string_view (categories[0]) == "Major & Modes"), 1);

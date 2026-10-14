@@ -45,6 +45,10 @@ private:
 
     void handleMidi (const juce::MidiMessage& msg, int samplePos, juce::MidiBuffer& out);
 
+    static constexpr size_t midiOutReserveBytes = 16384;
+
+    juce::MidiBuffer midiOut; // reused every block; see processBlock()
+
     scalesnap::ScaleEngine engine;
     scalesnap::NoteTracker tracker;
 

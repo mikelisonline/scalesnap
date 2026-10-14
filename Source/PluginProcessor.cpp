@@ -52,6 +52,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout ScaleSnapProcessor::createPa
 void ScaleSnapProcessor::prepareToPlay (double, int)
 {
     tracker.clear();
+    // Reserve room for the output up front: addEvent() on a buffer that has to grow would
+    // allocate on the audio thread.
+    midiOut.clear();
+    midiOut.ensureSize (midiOutReserveBytes);
     for (auto& a : inputActive)  a = false;
     for (auto& a : outputActive) a = false;
 }
@@ -72,11 +76,12 @@ void ScaleSnapProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
     engine.setScale ((int) rootParam->load(), (int) scaleParam->load());
 
-    juce::MidiBuffer out;
+    // A member rather than a local, so the audio thread does not allocate a buffer every block.
+    midiOut.clear();
     for (const auto metadata : midi)
-        handleMidi (metadata.getMessage(), metadata.samplePosition, out);
+        handleMidi (metadata.getMessage(), metadata.samplePosition, midiOut);
 
-    midi.swapWith (out);
+    midi.swapWith (midiOut);
 
     for (int n = 0; n < 128; ++n)
     {
@@ -176,14 +181,24 @@ void ScaleSnapProcessor::setStateInformation (const void* data, int sizeInBytes)
     const auto newState = juce::ValueTree::fromXml (*xml);
     parameters.replaceState (newState);
 
+    int index = -1;
+
     if (newState.hasProperty (scaleIdProperty))
     {
-        const int index = scalesnap::findScaleIndexById (newState[scaleIdProperty].toString().toRawUTF8());
-
-        if (index >= 0)
-            if (auto* param = parameters.getParameter ("scale"))
-                param->setValueNotifyingHost (param->convertTo0to1 ((float) index));
+        index = scalesnap::findScaleIndexById (newState[scaleIdProperty].toString().toRawUTF8());
     }
+    else
+    {
+        // State saved by the first release: no id, only the position in its 16-entry list.
+        const auto savedScale = newState.getChildWithProperty ("id", "scale");
+
+        if (savedScale.isValid() && savedScale.hasProperty ("value"))
+            index = scalesnap::legacyScaleIndexToIndex (juce::roundToInt ((float) savedScale["value"]));
+    }
+
+    if (index >= 0)
+        if (auto* param = parameters.getParameter ("scale"))
+            param->setValueNotifyingHost (param->convertTo0to1 ((float) index));
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
