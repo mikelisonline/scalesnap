@@ -8,47 +8,12 @@
 #include <cstdint>
 #include <initializer_list>
 
+#include "ScaleLibrary.h"
+
 namespace scalesnap
 {
 
 //==============================================================================
-struct ScaleDef
-{
-    const char* name;
-    uint16_t mask; // bit i set => semitone i above the root is in the scale
-};
-
-constexpr uint16_t makeMask (std::initializer_list<int> degrees)
-{
-    uint16_t m = 0;
-    for (auto d : degrees)
-        m = (uint16_t) (m | (1u << d));
-    return m;
-}
-
-inline const std::array<ScaleDef, 16>& getScales()
-{
-    static const std::array<ScaleDef, 16> scales {{
-        { "Major",             makeMask ({ 0, 2, 4, 5, 7, 9, 11 }) },
-        { "Natural Minor",     makeMask ({ 0, 2, 3, 5, 7, 8, 10 }) },
-        { "Harmonic Minor",    makeMask ({ 0, 2, 3, 5, 7, 8, 11 }) },
-        { "Melodic Minor",     makeMask ({ 0, 2, 3, 5, 7, 9, 11 }) },
-        { "Dorian",            makeMask ({ 0, 2, 3, 5, 7, 9, 10 }) },
-        { "Phrygian",          makeMask ({ 0, 1, 3, 5, 7, 8, 10 }) },
-        { "Lydian",            makeMask ({ 0, 2, 4, 6, 7, 9, 11 }) },
-        { "Mixolydian",        makeMask ({ 0, 2, 4, 5, 7, 9, 10 }) },
-        { "Locrian",           makeMask ({ 0, 1, 3, 5, 6, 8, 10 }) },
-        { "Phrygian Dominant", makeMask ({ 0, 1, 4, 5, 7, 8, 10 }) },
-        { "Major Pentatonic",  makeMask ({ 0, 2, 4, 7, 9 }) },
-        { "Minor Pentatonic",  makeMask ({ 0, 3, 5, 7, 10 }) },
-        { "Blues",             makeMask ({ 0, 3, 5, 6, 7, 10 }) },
-        { "Harmonic Major",    makeMask ({ 0, 2, 4, 5, 7, 8, 11 }) },
-        { "Whole Tone",        makeMask ({ 0, 2, 4, 6, 8, 10 }) },
-        { "Chromatic",         makeMask ({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }) },
-    }};
-    return scales;
-}
-
 inline const std::array<const char*, 12>& getNoteNames()
 {
     static const std::array<const char*, 12> names {{ "C", "C#", "D", "D#", "E", "F",

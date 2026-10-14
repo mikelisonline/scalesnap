@@ -155,15 +155,35 @@ juce::AudioProcessorEditor* ScaleSnapProcessor::createEditor()
 
 void ScaleSnapProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (auto xml = parameters.copyState().createXml())
+    auto state = parameters.copyState();
+
+    // The scale parameter only stores a position in the scale list, which can change between
+    // versions, so the scale's stable id is saved as well and wins when the state is loaded.
+    const auto& scales = scalesnap::getScales();
+    const int index = juce::jlimit (0, (int) scales.size() - 1, (int) scaleParam->load());
+    state.setProperty (scaleIdProperty, juce::String (scales[(size_t) index].id), nullptr);
+
+    if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
 void ScaleSnapProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    if (auto xml = getXmlFromBinary (data, sizeInBytes))
-        if (xml->hasTagName (parameters.state.getType()))
-            parameters.replaceState (juce::ValueTree::fromXml (*xml));
+    auto xml = getXmlFromBinary (data, sizeInBytes);
+    if (xml == nullptr || ! xml->hasTagName (parameters.state.getType()))
+        return;
+
+    const auto newState = juce::ValueTree::fromXml (*xml);
+    parameters.replaceState (newState);
+
+    if (newState.hasProperty (scaleIdProperty))
+    {
+        const int index = scalesnap::findScaleIndexById (newState[scaleIdProperty].toString().toRawUTF8());
+
+        if (index >= 0)
+            if (auto* param = parameters.getParameter ("scale"))
+                param->setValueNotifyingHost (param->convertTo0to1 ((float) index));
+    }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

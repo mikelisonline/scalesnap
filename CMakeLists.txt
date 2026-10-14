@@ -48,13 +48,14 @@ juce_add_plugin(ScaleSnap
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE # for the scale search box
     VST3_CATEGORIES Instrument Tools
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
 target_sources(ScaleSnap PRIVATE
     Source/PluginProcessor.cpp
-    Source/PluginEditor.cpp)
+    Source/PluginEditor.cpp
+    Source/Favorites.cpp)
 
 target_compile_definitions(ScaleSnap PUBLIC
     JUCE_WEB_BROWSER=0

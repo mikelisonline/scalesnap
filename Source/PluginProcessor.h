@@ -41,6 +41,8 @@ public:
     std::array<std::atomic<bool>, 128> outputActive {};
 
 private:
+    inline static const juce::Identifier scaleIdProperty { "scaleId" };
+
     void handleMidi (const juce::MidiMessage& msg, int samplePos, juce::MidiBuffer& out);
 
     scalesnap::ScaleEngine engine;
