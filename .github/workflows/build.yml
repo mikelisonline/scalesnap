@@ -70,17 +70,25 @@ jobs:
         run: |
           python3 m4l/tools/gen_scales.py --check
           python3 m4l/tools/gen_patcher.py --check
+          python3 m4l/tools/gen_patcher_detect.py --check
           python3 m4l/tools/gen_golden.py --check
-      - name: Node tests (snapping parity with C++, patcher simulation, detection, favorites, clips, .amxd)
+      - name: Install NumPy (offline audio-analysis check)
+        run: python3 -m pip install numpy
+      - name: Audio detection parameters (synthesised scales and chords -> chromagram -> expected key first)
+        run: python3 m4l/tools/check_chroma.py
+      - name: Node tests (snapping parity with C++, patcher simulation, detection, audio detection, favorites, clips, .amxd)
         run: node m4l/tests/run.js
-      - name: Build the Max for Live device
+      - name: Build the Max for Live devices
         run: |
           python3 m4l/tools/build_amxd.py
           python3 m4l/tools/build_amxd.py --verify "m4l/dist/Scale Snap.amxd"
+          python3 m4l/tools/build_amxd.py --verify "m4l/dist/Scale Snap Detect.amxd"
       - uses: actions/upload-artifact@v4
         with:
           name: ScaleSnap-M4L
           path: |
             m4l/dist/*.amxd
             m4l/dist/scalesnap.js
+            m4l/dist/scalesnap_detect.js
+            m4l/dist/ssd.spec.maxpat
             m4l/dist/INSTALL.md
