@@ -555,11 +555,31 @@ public:
         scrollToCurrent();
     }
 
+    /** Brings the selected scale into view: if it is off screen it is centred in the list. */
     void scrollToCurrent()
     {
+        if (box.getHeight() <= 0)
+        {
+            scrollPending = true; // not laid out yet: try again from resized()
+            return;
+        }
+
+        scrollPending = false;
+
         for (size_t row = 0; row < items.size(); ++row)
-            if (items[row] == current)
-                box.scrollToEnsureRowIsOnscreen ((int) row);
+        {
+            if (items[row] != current)
+                continue;
+
+            auto* viewport = box.getViewport();
+            const int top = (int) row * rowHeight;
+            const int viewTop = viewport->getViewPositionY();
+
+            if (top < viewTop || top + rowHeight > viewTop + viewport->getViewHeight())
+                viewport->setViewPosition (0, juce::jmax (0, top - (viewport->getViewHeight() - rowHeight) / 2));
+
+            return;
+        }
     }
 
     void refreshFavorites() { box.repaint(); }
@@ -571,6 +591,9 @@ public:
         auto area = getLocalBounds();
         area.removeFromTop (headerHeight);
         box.setBounds (area);
+
+        if (scrollPending)
+            scrollToCurrent();
     }
 
     void paint (juce::Graphics& g) override
@@ -674,6 +697,7 @@ private:
     std::vector<int> items;
     juce::String emptyMessage;
     int current = -1;
+    bool scrollPending = false;
 };
 
 } // namespace ui

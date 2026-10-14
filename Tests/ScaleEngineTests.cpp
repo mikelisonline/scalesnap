@@ -3,6 +3,7 @@
 #include "ScaleEngine.h"
 
 #include <cstdio>
+#include <cstring>
 #include <string_view>
 #include <vector>
 
@@ -154,8 +155,10 @@ static void testLibrary()
     const auto& scales = getScales();
     const auto& categories = getCategories();
 
-    CHECK_EQ ((int) (scales.size() > 0), 1);
+    CHECK_EQ ((int) (scales.size() >= 160), 1);
+    CHECK_EQ ((int) categories.size(), 17);
     CHECK_EQ (findScaleIndexById ("major"), 0);   // default scale must stay first
+    CHECK_EQ ((int) (std::string_view (scales[0].name) == "Major"), 1);
     CHECK_EQ (findScaleIndexById ("no_such_scale"), -1);
     CHECK_EQ (findScaleIndexById (nullptr), -1);
 
@@ -165,6 +168,12 @@ static void testLibrary()
 
         // Ids are unique, so lookups by id find the right entry.
         CHECK_EQ (findScaleIndexById (s.id), (int) i);
+        for (size_t j = 0; j < i; ++j)
+            if (std::strcmp (scales[j].id, s.id) == 0)
+            {
+                std::printf ("duplicate scale id '%s'\n", s.id);
+                ++failures;
+            }
 
         // Every scale contains its root, has a name, and belongs to a known category.
         CHECK_EQ ((int) (s.mask & 1u), 1);
@@ -177,6 +186,25 @@ static void testLibrary()
         if (! known)
             std::printf ("unknown category '%s' for scale '%s'\n", s.category, s.id);
         CHECK_EQ (known, true);
+    }
+
+    // Scale ids that older versions saved must still resolve.
+    for (auto* id : { "major", "natural_minor", "harmonic_minor", "melodic_minor", "dorian", "phrygian",
+                      "lydian", "mixolydian", "locrian", "phrygian_dominant", "major_pentatonic",
+                      "minor_pentatonic", "blues", "harmonic_major", "whole_tone", "chromatic" })
+        CHECK_EQ ((int) (findScaleIndexById (id) >= 0), 1);
+
+    // Every category in the browser has at least one scale, and the first one is Major & Modes.
+    CHECK_EQ ((int) (std::string_view (categories[0]) == "Major & Modes"), 1);
+    CHECK_EQ ((int) (std::string_view (categories.back()) == "Other & Exotic"), 1);
+    for (auto* c : categories)
+    {
+        int count = 0;
+        for (const auto& s : scales)
+            count += std::string_view (s.category) == c ? 1 : 0;
+        if (count == 0)
+            std::printf ("empty category '%s'\n", c);
+        CHECK_EQ ((int) (count > 0), 1);
     }
 
     // The engine follows the library: D Dorian is C major shifted to start on D.
@@ -192,9 +220,60 @@ static void testLibrary()
     CHECK_EQ (e.isInScale (62), true);
 }
 
+// Spot checks of scales from different traditions: the notes are the semitones above the root.
+static void testWorldScales()
+{
+    auto maskOf = [] (const char* id) -> int
+    {
+        const int i = findScaleIndexById (id);
+        return i < 0 ? -1 : (int) getScales()[(size_t) i].mask;
+    };
+    auto isApprox = [] (const char* id)
+    {
+        const int i = findScaleIndexById (id);
+        return i >= 0 && std::string_view (getScales()[(size_t) i].info).substr (0, 16) == "Approx. 12-TET: ";
+    };
+    auto categoryOf = [] (const char* id) -> std::string_view
+    {
+        const int i = findScaleIndexById (id);
+        return i < 0 ? std::string_view() : std::string_view (getScales()[(size_t) i].category);
+    };
+
+    CHECK_EQ (maskOf ("hirajoshi"), (int) makeMask ({ 0, 2, 3, 7, 8 }));
+    CHECK_EQ (maskOf ("maqam_hijaz"), (int) makeMask ({ 0, 1, 4, 5, 7, 8, 10 }));
+    CHECK_EQ (maskOf ("thaat_bhairav"), (int) makeMask ({ 0, 1, 4, 5, 7, 8, 11 }));
+    CHECK_EQ (maskOf ("raga_malkauns"), (int) makeMask ({ 0, 3, 5, 8, 10 }));
+    CHECK_EQ (maskOf ("hungarian_minor"), (int) makeMask ({ 0, 2, 3, 6, 7, 8, 11 }));
+    CHECK_EQ (maskOf ("phrygian_dominant"), (int) makeMask ({ 0, 1, 4, 5, 7, 8, 10 }));
+    CHECK_EQ (maskOf ("blues"), (int) makeMask ({ 0, 3, 5, 6, 7, 10 }));
+    CHECK_EQ (maskOf ("major"), (int) makeMask ({ 0, 2, 4, 5, 7, 9, 11 }));
+
+    CHECK_EQ ((int) (categoryOf ("hirajoshi") == "Japanese"), 1);
+    CHECK_EQ ((int) (categoryOf ("maqam_hijaz") == "Arabic & Turkish"), 1);
+    CHECK_EQ ((int) (categoryOf ("thaat_bhairav") == "Indian (Hindustani)"), 1);
+    CHECK_EQ ((int) (categoryOf ("mela_shankarabharanam") == "Indian (Carnatic)"), 1);
+    CHECK_EQ ((int) (categoryOf ("dastgah_shur") == "Persian"), 1);
+
+    // Gamelan and quarter-tone scales are labelled as 12-TET approximations; exact ones are not.
+    for (auto* id : { "slendro", "pelog_selisir", "pelog_tembung", "maqam_rast", "maqam_bayati", "maqam_saba",
+                      "maqam_sikah", "dastgah_shur" })
+        CHECK_EQ (isApprox (id), true);
+    for (auto* id : { "major", "hirajoshi", "maqam_hijaz", "thaat_bhairav" })
+        CHECK_EQ (isApprox (id), false);
+
+    // The engine plays a world scale: Hirajoshi on A is A B C E F.
+    ScaleEngine e;
+    e.setScale (9, scaleIndex ("hirajoshi"));
+    for (int n : { 57, 59, 60, 64, 65, 69 })
+        CHECK_EQ (e.isInScale (n), true);
+    for (int n : { 58, 61, 62, 63, 66, 67, 68 })
+        CHECK_EQ (e.isInScale (n), false);
+}
+
 int main()
 {
     testLibrary();
+    testWorldScales();
     testSnapping();
     testChords();
     testTracker();

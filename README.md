@@ -31,13 +31,49 @@ list. Click a scale to select it; click the star on its row to favorite it. When
 collection is selected, the previous/next buttons step through your favorites only; otherwise they
 step through whatever the list is currently showing.
 
+**The scale list** has 162 scales in 17 categories, from the church modes and jazz scales to
+Japanese, Chinese, Indian, Arabic, Persian, Jewish, Eastern European, Spanish, African and Indonesian
+scales:
+
+| Category | Scales | Examples |
+|---|---|---|
+| Major & Modes | 11 | Major, Dorian, Lydian, Locrian #6, ... |
+| Minor | 5 | Natural, Harmonic and Melodic Minor, Neapolitan |
+| Pentatonic | 9 | Major, Minor, Egyptian, Man Gong, Ritsusen, hexatonics |
+| Blues & Jazz | 12 | Blues, Bebop, Altered, Lydian Dominant |
+| Symmetric | 12 | Whole Tone, Diminished, Augmented, Messiaen modes, Chromatic |
+| Japanese | 8 | Hirajoshi, In, Insen, Iwato, Kumoi, Yo, Ryukyu |
+| Chinese | 8 | Gong, Shang, Jue, Zhi, Yu and the heptatonic forms |
+| Indian (Hindustani) | 24 | the ten thaats plus ragas such as Yaman, Bhupali, Malkauns |
+| Indian (Carnatic) | 26 | Melakarta scales and ragas such as Mohanam, Hindolam |
+| Arabic & Turkish | 14 | Hijaz, Nahawand, Kurd, Ajam, Rast, Bayati, Saba |
+| Persian | 4 | Shur, Homayun, Chahargah, Mahur |
+| Jewish & Klezmer | 4 | Ahava Rabbah (Freygish), Mi Sheberach, Adonai Malach |
+| Eastern European | 6 | Hungarian, Romanian, Gypsy, Double Harmonic |
+| Spanish & Flamenco | 3 | Phrygian Dominant, Flamenco, Spanish 8-Tone |
+| African | 6 | Tizita, Bati, Ambassel, Anchihoye (Ethiopian) |
+| Indonesian & SE Asian | 3 | Slendro, Pelog |
+| Other & Exotic | 7 | Enigmatic, Prometheus, Oriental, Hawaiian, ... |
+
+Scales are listed by the same name used in their tradition (for example Hirajoshi, Bhairav, Hijaz).
+Some entries are the same set of notes under different names (Bilawal, Shankarabharanam and Ajam
+are all the major scale), because that is what you look for when you know the name.
+
+**12-TET approximations.** Scale Snap sends ordinary MIDI notes, which are tuned in 12 equal
+semitones. Scales that are really played with quarter tones or other tunings (Arabic and Turkish
+maqamat such as Rast, Bayati, Saba and Sikah, Persian dastgah such as Shur, Homayun and Chahargah,
+and the Indonesian Slendro and Pelog) are rounded to the nearest semitone. Their description starts
+with "Approx. 12-TET:" and says how each note was rounded. They give you the right set of notes to
+play in key, but not the microtonal pitches. To get those, use a synth that can be retuned (MPE or a
+tuning table) after Scale Snap.
+
 **Favorites** are global: they are shared by every Scale Snap instance and every Live set, and are
 saved immediately in a small settings file:
 
 - Mac: `~/Library/Application Support/mikel.studio/Scale Snap.settings`
 - Windows: `%APPDATA%\mikel.studio\Scale Snap.settings`
 
-Delete that file to clear them. The scale itself is saved with your Live set by name, so sets keep
+Delete that file to clear them. The scale itself is saved with your Live set by its id, so sets keep
 the right scale even if the list of scales grows.
 
 The keyboard shows the scale (cream keys, with the root in a stronger orange), the keys you press
@@ -91,7 +127,6 @@ Needs CMake 3.22+ and a C++17 compiler (Xcode on Mac, Visual Studio 2022 on Wind
 JUCE is downloaded automatically.
 
 ```sh
-cd scale-snap
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ctest --test-dir build          # unit tests for the scale logic
