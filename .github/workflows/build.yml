@@ -1,0 +1,58 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run unit tests
+        run: |
+          cmake -S . -B build -DSCALESNAP_BUILD_PLUGIN=OFF
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+
+  macos:
+    needs: tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build VST3 (Apple Silicon + Intel)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSCALESNAP_BUILD_TESTS=OFF
+          cmake --build build --config Release --parallel
+      - name: Sign (ad-hoc) and package
+        working-directory: build/ScaleSnap_artefacts/Release
+        run: |
+          codesign --force --deep --sign - "VST3/Scale Snap.vst3"
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp -R "VST3/Scale Snap.vst3" "$GITHUB_WORKSPACE/out/"
+          cp "$GITHUB_WORKSPACE/README.md" "$GITHUB_WORKSPACE/out/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScaleSnap-macOS
+          path: out
+
+  windows:
+    needs: tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build VST3
+        run: |
+          cmake -S . -B build -A x64 -DSCALESNAP_BUILD_TESTS=OFF
+          cmake --build build --config Release --parallel
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p out
+          cp -R "build/ScaleSnap_artefacts/Release/VST3/Scale Snap.vst3" out/
+          cp README.md out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScaleSnap-Windows
+          path: out
