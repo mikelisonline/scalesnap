@@ -13,29 +13,30 @@ VST3 plus key/scale **detection** from your playing or from a clip.
 Target: **Ableton Live 11 Suite** (or Standard with Max for Live) with the Max 8 that ships inside Live.
 It is plain Max 8: no `[v8]`, and the JavaScript is ES5 for the legacy `[js]` object.
 
-> Status: everything that can be tested outside Live is tested (see *Tests*). The device has been built
-> to the documented `.amxd` format but **has not been opened in Live yet**. The list of things to
+> Status: everything that can be tested outside Live is tested (see *Tests*). The devices are written by
+> our own freezer (`tools/amxd_frozen.py`, checked byte for byte against devices frozen by Max) and **have not been
+> opened in Live yet**. The list of things to
 > confirm on a real Live 11 is at the end of this file.
 
 ## Install
 
 1. Get the files from the `ScaleSnap-M4L` artifact of the latest successful "Build" run (GitHub, Actions tab),
-   or build them yourself (`python3 m4l/tools/build_amxd.py`, output in `m4l/dist/`):
-   `Scale Snap.amxd` + `scalesnap.js` (MIDI effect) and `Scale Snap Detect.amxd` + `scalesnap_detect.js` +
-   `ssd.spec.maxpat` (audio effect, see below).
-2. Put both files **in the same folder**. A good place is your User Library:
-   `Presets/MIDI Effects/Max MIDI Effect/` (in Live's browser: right-click *Max MIDI Effect* >
-   *Show in Finder/Explorer*).
-3. Drag **Scale Snap** onto a MIDI track, before the instrument.
-4. **One-time, recommended: freeze it** so it no longer needs `scalesnap.js` next to it.
-   Click the Edit button in the device's title bar, click the snowflake (*Freeze Device*) in the Max
-   window, then *File > Save* (or *Save As* into your User Library). The frozen file is self-contained.
-   Do not commit frozen devices.
+   or build them yourself (`python3 m4l/tools/build_amxd.py`, output in `m4l/dist/`). You get two files,
+   **`Scale Snap.amxd`** (MIDI effect) and **`Scale Snap Detect.amxd`** (audio effect, see below). Each is a
+   *frozen* device: the scripts it needs (`scalesnap.js`, `scalesnap_detect.js`, `ssd.spec.maxpat`) are embedded in
+   the file, so there is nothing else to copy.
+2. Drag **Scale Snap.amxd** onto a MIDI track in Live, before the instrument. To keep it, put the file anywhere in
+   your User Library, for example `Presets/MIDI Effects/Max MIDI Effect/` (in Live's browser: right-click
+   *Max MIDI Effect* > *Show in Finder/Explorer*).
 
-The `.amxd` references `scalesnap.js` by name. Unfrozen, Max finds it next to the device. If the scale
-menu stays empty, open the Max console (Edit button, *Window > Max Console*) and look for errors
-mentioning `scalesnap.js`. If the script fails to load the device passes notes through unchanged
-(it never goes silent): the realtime path does not depend on the script.
+If Live reports a missing file, or the scale menu stays empty (open the Max console: Edit button, *Window > Max
+Console*, and look for "can't find" errors mentioning `scalesnap.js`): build the development version with
+`python3 m4l/tools/build_amxd.py --unfrozen` (plain `.amxd` files with `scalesnap.js`, `scalesnap_detect.js` and
+`ssd.spec.maxpat` next to them, all in `m4l/dist/`; keep each device and its files in one folder), open the device in
+Live, click Edit, click the snowflake (*Freeze Device*) in the bottom toolbar of the Max window and *File > Save As...*
+the same name into your User Library. Saving is what freezes it. Do not commit frozen devices that Max wrote.
+If the script fails to load the device passes notes through unchanged (it never goes silent): the realtime path does
+not depend on the script.
 
 ## Using it
 
@@ -129,9 +130,9 @@ device in the Set.
 
 ### Using it
 
-1. Put `Scale Snap Detect.amxd`, `scalesnap_detect.js` and `ssd.spec.maxpat` **in the same folder** (a good place is
-   `Presets/Audio Effects/Max Audio Effect/` in your User Library). Drag the device onto an audio track, or onto the
-   master or a group to analyse a mix. (Freezing it once, as for Scale Snap, makes it self-contained.)
+1. Drag `Scale Snap Detect.amxd` onto an audio track, or onto the master or a group to analyse a mix. It is a single
+   file (`scalesnap_detect.js` and `ssd.spec.maxpat` are embedded); to keep it put it in your User Library, for example
+   `Presets/Audio Effects/Max Audio Effect/`.
 2. Play the track. After about 4 seconds of audio above the gate the status line shows `A Minor 74%` and the list
    shows the top five matches. The 12 bars are the averaged pitch-class energy (C to B, tallest bar = 1).
 3. Turn on **Send to Scale Snap**. In every Scale Snap MIDI device a line `Audio (<track name>): ...` appears; press
@@ -218,13 +219,15 @@ Files:
 | `m4l/ScaleSnap/Scale Snap.maxpat` | The patcher (JSON). **Generated** by `m4l/tools/gen_patcher.py` (it has ~140 boxes and ~180 cords). Open it in Max to read or edit it; if you change it by hand, port the change to the generator. |
 | `m4l/ScaleSnapDetect/chroma.js`, `scalesnap_detect.js` | Audio device: spectrum -> chroma -> shared scorer, and its `[js]` glue. |
 | `m4l/ScaleSnapDetect/Scale Snap Detect.maxpat`, `ssd.spec.maxpat` | Audio device patcher and its `pfft~` sub-patcher. **Generated** by `m4l/tools/gen_patcher_detect.py`. |
-| `m4l/tools/build_amxd.py` | Concatenates the JS (`dist/scalesnap.js`, `dist/scalesnap_detect.js`), wraps the patchers into `dist/Scale Snap.amxd` and `dist/Scale Snap Detect.amxd`, copies `ssd.spec.maxpat`, then re-parses the devices. |
+| `m4l/tools/build_amxd.py` | Concatenates the JS (`scalesnap.js`, `scalesnap_detect.js`) and freezes each patcher with its files into one `dist/Scale Snap.amxd` / `dist/Scale Snap Detect.amxd`, then re-parses them. Fails if a file a patcher references (`js`, `pfft~`, `poly~`, bpatcher, abstraction, also in sub-patchers) is not embedded or an embedded file is referenced by nothing. Reproducible: same sources, same bytes (`SOURCE_DATE_EPOCH` sets the embedded file times). `--unfrozen`: development build with loose files. |
+| `m4l/tools/amxd_frozen.py` | The frozen `.amxd` writer/parser (container format documented in its docstring) and the dependency check. Verified byte for byte against real devices frozen by Max (`m4l/tests/fixtures/`). |
 | `m4l/tools/check_chroma.py`, `chroma_runner.js` | Offline NumPy check of the audio analysis parameters. |
 | `m4l/tests/` | Node tests (no npm packages). |
 
 `.amxd` format (as used by Ableton's `maxdevtools` repository): chunks of `4-byte tag | uint32 little-endian
 length | payload` -- `ampf` (device type `mmmm` = MIDI effect), `meta` (uint32), `ptch` (the patcher JSON,
-UTF-8, NUL-terminated).
+UTF-8, NUL-terminated). A frozen device has the same `ampf` and `meta` (7) chunks, but `ptch` is a collective
+holding the patcher and every file it needs; the layout is documented in `m4l/tools/amxd_frozen.py`.
 
 ## Tests
 
@@ -244,6 +247,10 @@ python3 m4l/tools/check_chroma.py   # needs NumPy
 * Detection (the design-doc cases), favorites (mock `Dict`), clip rewriting (mock Live API), the `[js]` glue
   (loaded in a sandbox that imitates the legacy `[js]` environment), an ES5 syntax check, structural validation
   of every `.maxpat` (valid cords, no message fan-out, layout inside 440 x 169, parameter names), and the built `.amxd`.
+* Frozen devices (`frozen.test.js`, `test_frozen.py`): the built files are parsed by an independent reader (device type,
+  embedded file list and contents equal the sources, main patcher = source patcher + `dependency_cache`); two builds are
+  byte-identical; the writer reproduces real devices frozen by Max (`tests/fixtures/`, MIT, Ableton AG) byte for byte;
+  the build fails on a referenced file that is not embedded and on an embedded file nothing references.
 * Audio device (`chroma.test.js`, `detectdevice.test.js`): synthetic chroma vectors (C major scale, A minor pentatonic,
   silence, memory) through the shared scorer; synthetic audio (A minor triad + pentatonic line, scales, detuned
   +30 / -40 cents) through a test-only FFT and `chromaFromSpectrum`; the `[js]` glue driven tick by tick with a fake
@@ -270,8 +277,9 @@ python3 m4l/tools/check_chroma.py   # needs NumPy
 
 ### Scale Snap (MIDI effect)
 
-The device loads and the generated `.amxd` header is accepted; `scalesnap.js` is found next to the unfrozen device and
-after freezing; `live.comment` accepts `set`; `kslider` polyphonic `set` shows the scale; `live.menu` accepts
+The frozen device loads (drag `dist/Scale Snap.amxd` into Live from a folder with **no** loose files) and Live accepts its
+header (`ampf` = `mmmm`, `meta` = 7); the Max Console (Edit button, *Window > Max Console*) shows no "can't find" errors, so
+`[js scalesnap.js]` found the embedded script; `live.comment` accepts `set`; `kslider` polyphonic `set` shows the scale; `live.menu` accepts
 `clear`/`append`/`set -1`; `live.thisdevice`'s middle outlet reports device on/off; midiparse/midiformat outlet order
 (polyphonic aftertouch, channel); `get_notes_extended` / `apply_note_modifications` call and return formats from `[js]`;
 Snap Clip undo; `~/Documents/Max 8/...` writable; no added latency or jitter; whether Live records pre-device input.
@@ -284,10 +292,11 @@ saving and reopening a Set.
 
 Everything in the JavaScript and the offline signal processing is tested; these are the Max/Live behaviours that are not:
 
-1. The generated header (`ampf` = `aaaa`, `meta` = 0) is accepted and the device appears as an **Audio Effect** (loads on audio, group,
-   master and return tracks).
-2. `pfft~ ssd.spec 16384 4` finds `ssd.spec.maxpat` next to the unfrozen device, and **Freeze** embeds it (device works from a fresh Set
-   with the `dist` folder gone). An analysis-only `pfft~` (a sub-patcher with `fftin~` and no `fftout~`) is allowed to run.
+1. The frozen device (`ampf` = `aaaa`, `meta` = 7) loads from a folder with **no** loose files, appears as an **Audio Effect** (loads on audio,
+   group, master and return tracks) and the Max Console shows no "can't find" errors (`scalesnap_detect.js`, `ssd.spec`).
+2. `pfft~ ssd.spec 16384 4` finds the **embedded** `ssd.spec.maxpat` (status leaves `No spectrum (pfft~ not writing)` while audio plays).
+   An analysis-only `pfft~` (a sub-patcher with `fftin~` and no `fftout~`) is allowed to run. If it does not, use the fallback in *Install*
+   (Max's own *Freeze Device*).
 3. `---spec` is expanded to the **same** device-unique name in all three places: `buffer~ ---spec`, `poke~ ---spec` *inside the
    `pfft~` sub-patcher*, and the `[js ... ---spec]` argument. Symptom if not: status `No spectrum (pfft~ not writing)` while the track
    plays. Also check two Detect devices on two tracks show different bars (no shared buffer).

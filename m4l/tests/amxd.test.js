@@ -9,7 +9,7 @@ const vm = require("vm");
 const { ROOT, SRC } = require("./helpers");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ssamxd-"));
-const build = cp.spawnSync("python3", [path.join(ROOT, "m4l", "tools", "build_amxd.py"), "--out", tmp], { encoding: "utf8" });
+const build = cp.spawnSync("python3", [path.join(ROOT, "m4l", "tools", "build_amxd.py"), "--unfrozen", "--out", tmp], { encoding: "utf8" });
 const amxdPath = path.join(tmp, "Scale Snap.amxd");
 
 /** Independent re-implementation of the container parser (chunks: tag, uint32 LE length, payload). */
@@ -26,9 +26,9 @@ function parseAmxd(buf) {
     return chunks;
 }
 
-test("build_amxd.py succeeds and writes the amxd, the js bundle and INSTALL.md", () => {
+test("build_amxd.py --unfrozen succeeds and writes the plain amxd and the loose js bundle", () => {
     assert.equal(build.status, 0, build.stdout + build.stderr);
-    ["Scale Snap.amxd", "scalesnap.js", "INSTALL.md"].forEach((f) => assert.ok(fs.existsSync(path.join(tmp, f)), f));
+    ["Scale Snap.amxd", "scalesnap.js"].forEach((f) => assert.ok(fs.existsSync(path.join(tmp, f)), f));
 });
 
 test(".amxd structure: ampf('mmmm') + meta + ptch(JSON, NUL terminated), lengths consistent", () => {

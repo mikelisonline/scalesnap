@@ -330,7 +330,7 @@ test("ES5 only: no modern syntax in the audio device scripts", () => {
     });
     // the shared modules are bundled, not forked: the bundle must contain them verbatim
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ssd-"));
-    const r = cp.spawnSync("python3", [path.join(ROOT, "m4l", "tools", "build_amxd.py"), "--out", tmp], { encoding: "utf8" });
+    const r = cp.spawnSync("python3", [path.join(ROOT, "m4l", "tools", "build_amxd.py"), "--unfrozen", "--out", tmp], { encoding: "utf8" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const bundle = fs.readFileSync(path.join(tmp, "scalesnap_detect.js"), "utf8");
     ["scales.js", "detect.js"].forEach((f) => assert.ok(bundle.indexOf(fs.readFileSync(path.join(SRC, f), "utf8").trimEnd()) >= 0, f + " not bundled verbatim"));
@@ -520,7 +520,7 @@ test("gen_patcher_detect.py --check passes (committed patchers are not stale)", 
 
 // ------------------------------------------------------------------------------------------ .amxd
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ssdamxd-"));
-const build = cp.spawnSync("python3", [path.join(ROOT, "m4l", "tools", "build_amxd.py"), "--out", tmp], { encoding: "utf8" });
+const build = cp.spawnSync("python3", [path.join(ROOT, "m4l", "tools", "build_amxd.py"), "--unfrozen", "--out", tmp], { encoding: "utf8" });
 const amxdPath = path.join(tmp, "Scale Snap Detect.amxd");
 
 function parseAmxd(buf) {
@@ -536,9 +536,9 @@ function parseAmxd(buf) {
     return chunks;
 }
 
-test("build_amxd.py builds both devices and copies the pfft~ sub-patcher next to the audio device", () => {
+test("build_amxd.py --unfrozen builds both devices and copies the pfft~ sub-patcher next to the audio device", () => {
     assert.equal(build.status, 0, build.stdout + build.stderr);
-    ["Scale Snap.amxd", "Scale Snap Detect.amxd", "scalesnap.js", "scalesnap_detect.js", "ssd.spec.maxpat", "INSTALL.md"]
+    ["Scale Snap.amxd", "Scale Snap Detect.amxd", "scalesnap.js", "scalesnap_detect.js", "ssd.spec.maxpat"]
         .forEach((f) => assert.ok(fs.existsSync(path.join(tmp, f)), f));
     assert.equal(fs.readFileSync(path.join(tmp, "ssd.spec.maxpat"), "utf8"), fs.readFileSync(specFile, "utf8"));
 });

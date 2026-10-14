@@ -78,17 +78,17 @@ jobs:
         run: python3 m4l/tools/check_chroma.py
       - name: Node tests (snapping parity with C++, patcher simulation, detection, audio detection, favorites, clips, .amxd)
         run: node m4l/tests/run.js
-      - name: Build the Max for Live devices
+      - name: Build the frozen Max for Live devices (one self-contained .amxd each)
         run: |
           python3 m4l/tools/build_amxd.py
           python3 m4l/tools/build_amxd.py --verify "m4l/dist/Scale Snap.amxd"
           python3 m4l/tools/build_amxd.py --verify "m4l/dist/Scale Snap Detect.amxd"
+          test "$(LC_ALL=C ls m4l/dist)" = "$(printf 'Scale Snap Detect.amxd\nScale Snap.amxd')"
+      - name: Stage the download (the two devices and the install note)
+        run: |
+          mkdir out
+          cp m4l/dist/*.amxd m4l/INSTALL.md out/
       - uses: actions/upload-artifact@v4
         with:
           name: ScaleSnap-M4L
-          path: |
-            m4l/dist/*.amxd
-            m4l/dist/scalesnap.js
-            m4l/dist/scalesnap_detect.js
-            m4l/dist/ssd.spec.maxpat
-            m4l/dist/INSTALL.md
+          path: out

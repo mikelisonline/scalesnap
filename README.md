@@ -4,7 +4,8 @@ Keeps what you play in key, like Logic's Scale Quantize, with a library of 162 s
 It comes in two forms:
 
 - **Max for Live MIDI effect: the recommended way in Ableton Live 11 Suite** (or Standard with Max for Live).
-  `Scale Snap.amxd` goes in the MIDI-effect slot right in front of your instrument on the same track: no second
+  `Scale Snap.amxd` (one self-contained file: just drag it into Live, or put it anywhere in your User Library)
+  goes in the MIDI-effect slot right in front of your instrument on the same track: no second
   track, no routing. It also detects the key and scale of what you play or of a MIDI clip, and can snap a
   recorded clip to a scale. See [m4l/README.md](m4l/README.md) (download: `ScaleSnap-M4L` artifact of the
   latest "Build" run).
