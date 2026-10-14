@@ -40,11 +40,32 @@ var ScaleSnapClip = (function () {
         return null;
     }
 
+    var EPS = 1e-6;
+
+    /** True if two notes sound together: they start together or one starts while the other still sounds. */
+    function overlaps(a, b) {
+        if (Math.abs(a.start_time - b.start_time) < EPS) { return true; }
+        return a.start_time < b.start_time + b.duration - EPS && b.start_time < a.start_time + a.duration - EPS;
+    }
+
+    /** Which of two notes on the same pitch is kept: longer, then louder, then earlier, then first in the clip. */
+    function betterThan(a, b) {
+        if (Math.abs(a.note.duration - b.note.duration) > EPS) { return a.note.duration > b.note.duration; }
+        if (a.note.velocity !== b.note.velocity) { return a.note.velocity > b.note.velocity; }
+        if (Math.abs(a.note.start_time - b.note.start_time) > EPS) { return a.note.start_time < b.note.start_time; }
+        return a.index < b.index;
+    }
+
     /**
      * Remap note pitches through `map` (128 entries: output note or -1).
      * Returns { notes: modified note objects (only those that changed), changed, moved, muted, collisions }.
-     * Blocked notes (map -1) get mute = 1. If two sounding notes land on the same pitch at the same
-     * start time, the later one is muted.
+     * Blocked notes (map -1) get mute = 1.
+     *
+     * A note that was moved onto a pitch where another sounding note already plays at the same time
+     * (it starts together with it, or overlaps it) is muted, never the other way round: notes the
+     * player wrote in scale are not touched. Between two moved notes the longer one is kept, then
+     * the louder, then the earlier. Notes that were already in scale are never muted, even if
+     * they overlap each other.
      */
     function remapNotes(notes, map) {
         var work = [];
@@ -53,7 +74,7 @@ var ScaleSnapClip = (function () {
             var src = notes[i];
             var copy = {};
             for (var k in src) { if (src.hasOwnProperty(k)) { copy[k] = src[k]; } }
-            work.push({ orig: src, note: copy, index: i, changed: false });
+            work.push({ orig: src, note: copy, index: i, changed: false, moved: false });
         }
 
         var moved = 0, muted = 0, collisions = 0;
@@ -64,24 +85,31 @@ var ScaleSnapClip = (function () {
             if (target < 0) {
                 n.mute = 1; w.changed = true; muted++;
             } else if (target !== n.pitch) {
-                n.pitch = target; w.changed = true; moved++;
+                n.pitch = target; w.changed = true; w.moved = true; moved++;
             }
         }
 
-        // Collisions: same pitch + same start among sounding notes -> mute the later one.
-        var order = work.slice().sort(function (a, b) {
-            if (a.note.start_time !== b.note.start_time) { return a.note.start_time - b.note.start_time; }
-            return a.index - b.index;
-        });
-        var seen = {};
-        for (i = 0; i < order.length; i++) {
-            var o = order[i];
-            if (o.note.mute) { continue; }
-            var key = o.note.pitch + "@" + Math.round(o.note.start_time * 1e6);
-            if (seen[key]) {
-                o.note.mute = 1; o.changed = true; collisions++;
-            } else {
-                seen[key] = true;
+        // Collisions, per pitch among the sounding notes: notes that did not move are kept as they
+        // are; the moved ones come next, best first, and each is muted if it overlaps a kept note.
+        var byPitch = {};
+        for (i = 0; i < work.length; i++) {
+            if (work[i].note.mute) { continue; }
+            (byPitch[work[i].note.pitch] = byPitch[work[i].note.pitch] || []).push(work[i]);
+        }
+        for (var pitch in byPitch) {
+            if (!byPitch.hasOwnProperty(pitch)) { continue; }
+            var group = byPitch[pitch];
+            var kept = [], candidates = [], j;
+            for (j = 0; j < group.length; j++) { (group[j].moved ? candidates : kept).push(group[j]); }
+            candidates.sort(function (a, b) { return betterThan(a, b) ? -1 : (betterThan(b, a) ? 1 : 0); });
+            for (j = 0; j < candidates.length; j++) {
+                var c = candidates[j], clash = false;
+                for (var m = 0; m < kept.length && !clash; m++) { clash = overlaps(c.note, kept[m].note); }
+                if (clash) {
+                    c.note.mute = 1; c.changed = true; collisions++;
+                } else {
+                    kept.push(c);
+                }
             }
         }
 

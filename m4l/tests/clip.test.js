@@ -44,6 +44,68 @@ test("two notes landing on the same pitch and start: the later one is muted", ()
     assert.equal(byId[3].pitch, 60);
 });
 
+test("a collision keeps the player's sustained in-scale note, not the ghost note that was moved onto it", () => {
+    // C major, Nearest (tie up): F# (66) -> G (67). The held G was already in scale.
+    const ghost = mk(1, 66, 0, { duration: 0.25, velocity: 40 });
+    const held = mk(2, 67, 0, { duration: 4, velocity: 120 });
+    const r = Clip.remapNotes([ghost, held], cMajor(Snap.MODE.NEAREST_UP));
+    assert.equal(r.collisions, 1);
+    assert.deepEqual(r.notes.map((n) => [n.note_id, n.pitch, n.mute]), [[1, 67, 1]], "only the moved ghost note is written, muted");
+    // and in the other input order
+    const r2 = Clip.remapNotes([held, ghost], cMajor(Snap.MODE.NEAREST_UP));
+    assert.deepEqual(r2.notes.map((n) => [n.note_id, n.pitch, n.mute]), [[1, 67, 1]]);
+});
+
+test("through the Live API: the held in-scale note is untouched and the status counts the duplicate", () => {
+    const { API, calls } = fakeLive({ notes: [mk(1, 66, 0, { duration: 0.25, velocity: 40 }), mk(2, 67, 0, { duration: 4, velocity: 120 })] });
+    const r = Clip.snapClip(API, null, cMajor(Snap.MODE.NEAREST_UP));
+    assert.ok(r.ok);
+    const sent = JSON.parse(calls[1][1]).notes;
+    assert.deepEqual(sent.map((n) => n.note_id), [1], "note 2 (the held G) is not modified");
+    assert.equal(sent[0].mute, 1);
+    assert.match(r.message, /1 duplicate muted/);
+});
+
+test("a moved note that overlaps an existing note of the same pitch in time (different start) is muted", () => {
+    // C#3 (61) 0..2 -> C (60); an existing C 1..3 sounds over its second half.
+    const moved = mk(1, 61, 0, { duration: 2 });
+    const existing = mk(2, 60, 1, { duration: 2 });
+    const r = Clip.remapNotes([moved, existing], cMajor(Snap.MODE.NEAREST_DOWN));
+    assert.equal(r.collisions, 1);
+    assert.deepEqual(r.notes.map((n) => [n.note_id, n.pitch, n.mute]), [[1, 60, 1]]);
+    // the same when the moved note sits inside a long existing note
+    const r2 = Clip.remapNotes([mk(1, 61, 1, { duration: 0.5 }), mk(2, 60, 0, { duration: 4 })], cMajor(Snap.MODE.NEAREST_DOWN));
+    assert.deepEqual(r2.notes.map((n) => [n.note_id, n.mute]), [[1, 1]]);
+});
+
+test("notes that only touch end to end, or sit at other pitches, do not collide", () => {
+    const r = Clip.remapNotes([mk(1, 61, 0, { duration: 1 }), mk(2, 60, 1, { duration: 1 }), mk(3, 60, 3, { duration: 1 })], cMajor(Snap.MODE.NEAREST_DOWN));
+    assert.equal(r.collisions, 0);
+    assert.deepEqual(r.notes.map((n) => [n.note_id, n.pitch, n.mute]), [[1, 60, 0]]);
+});
+
+test("when two moved notes collide the longer one is kept, then the louder, then the earlier", () => {
+    const run = (a, b) => Clip.remapNotes([a, b], cMajor(Snap.MODE.NEAREST_DOWN)).notes.filter((n) => n.mute).map((n) => n.note_id);
+    // two C#s that both become C
+    assert.deepEqual(run(mk(1, 61, 0, { duration: 1 }), mk(2, 61, 0, { duration: 3 })), [1], "longer wins");
+    assert.deepEqual(run(mk(1, 61, 0, { velocity: 50 }), mk(2, 61, 0, { velocity: 90 })), [1], "louder wins");
+    assert.deepEqual(run(mk(1, 61, 0.25), mk(2, 61, 0)), [1], "earlier wins");
+    assert.deepEqual(run(mk(1, 61, 0), mk(2, 61, 0)), [2], "identical notes: the first in the clip wins");
+});
+
+test("existing overlapping notes that were already in scale are never touched", () => {
+    const r = Clip.remapNotes([mk(1, 60, 0, { duration: 2 }), mk(2, 60, 1, { duration: 2 }), mk(3, 61, 8)], cMajor(Snap.MODE.NEAREST_DOWN));
+    assert.equal(r.collisions, 0);
+    assert.deepEqual(r.notes.map((n) => n.note_id), [3]);
+});
+
+test("a muted note does not block later notes: only notes that overlap a kept note are muted", () => {
+    // all three land on C: A 0..2 (kept, longest), B 1.5..2.5 overlaps A (muted), C 2.2..3.2 overlaps only B
+    const r = Clip.remapNotes([mk(1, 61, 0, { duration: 2 }), mk(2, 61, 1.5, { duration: 1 }), mk(3, 61, 2.2, { duration: 1 })], cMajor(Snap.MODE.NEAREST_DOWN));
+    assert.equal(r.collisions, 1);
+    assert.deepEqual(r.notes.map((n) => [n.note_id, n.pitch, n.mute]), [[1, 60, 0], [2, 60, 1], [3, 60, 0]]);
+});
+
 test("already muted notes are left alone and in-scale clips need no changes", () => {
     const r = Clip.remapNotes([mk(1, 61, 0, { mute: 1 }), mk(2, 62, 1)], cMajor(0));
     assert.equal(r.changed, 0);
