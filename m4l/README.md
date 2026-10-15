@@ -20,8 +20,9 @@ It is plain Max 8: no `[v8]`, and the JavaScript is ES5 for the legacy `[js]` ob
 
 ## Install
 
-1. Get the files from the `ScaleSnap-M4L` artifact of the latest successful "Build" run (GitHub, Actions tab),
-   or build them yourself (`python3 m4l/tools/build_amxd.py`, output in `m4l/dist/`). You get two files,
+1. Download [ScaleSnap-Ableton.zip](https://github.com/mikelisonline/scalesnap/releases/latest/download/ScaleSnap-Ableton.zip)
+   from the latest GitHub Release and unzip it (see [INSTALL.md](INSTALL.md)), or build them yourself
+   (`python3 m4l/tools/build_amxd.py`, output in `m4l/dist/`). You get two files,
    **`Scale Snap.amxd`** (MIDI effect) and **`Scale Snap Detect.amxd`** (audio effect, see below). Each is a
    *frozen* device: the scripts it needs (`scalesnap.js`, `scalesnap_detect.js`, `ssd.spec.maxpat`) are embedded in
    the file, so there is nothing else to copy.

@@ -1,20 +1,34 @@
 name: Build
 
+# Pushing a tag v* (or running this workflow by hand with a tag) builds everything and publishes a GitHub Release
+# (the `release` job at the bottom). Plain pushes and pull requests only build and test.
 on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and publish, e.g. v1.0.0 (must exist; leave empty for a plain build)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
 
 jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
       - name: Build and run unit tests
         run: |
           cmake -S . -B build -DSCALESNAP_BUILD_PLUGIN=OFF
           cmake --build build
           ctest --test-dir build --output-on-failure
+      - name: Release scripts (version-tag guard, Ableton zip layout, release notes)
+        run: python3 -m unittest discover -s scripts -v
 
   processor-tests:
     # The tests that need JUCE: legacy plugin state restore through the real processor, no heap use in processBlock.
@@ -22,6 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
       - name: Install JUCE's Linux dependencies
         run: |
           sudo apt-get update
@@ -39,6 +55,8 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
       - name: Build VST3 (Apple Silicon + Intel)
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSCALESNAP_BUILD_TESTS=OFF
@@ -49,9 +67,11 @@ jobs:
           codesign --force --deep --sign - "VST3/Scale Snap.vst3"
           mkdir -p "$GITHUB_WORKSPACE/out"
           # upload-artifact drops Unix permissions/symlinks, so ship a ditto zip
-          # (preserves the executable bit) inside the artifact.
-          ditto -c -k --sequesterRsrc --keepParent "VST3/Scale Snap.vst3" "$GITHUB_WORKSPACE/out/ScaleSnap-macOS.zip"
+          # (preserves the executable bit) inside the artifact. The name is the release asset name.
+          ditto -c -k --sequesterRsrc --keepParent "VST3/Scale Snap.vst3" "$GITHUB_WORKSPACE/out/ScaleSnap-VST3-macOS.zip"
           cp "$GITHUB_WORKSPACE/README.md" "$GITHUB_WORKSPACE/out/"
+          python3 "$GITHUB_WORKSPACE/scripts/release.py" verify-vst3 "$GITHUB_WORKSPACE/out/ScaleSnap-VST3-macOS.zip" --macos
+          unzip -Z "$GITHUB_WORKSPACE/out/ScaleSnap-VST3-macOS.zip" | grep -F "Contents/MacOS/Scale Snap"
       - uses: actions/upload-artifact@v4
         with:
           name: ScaleSnap-macOS
@@ -62,6 +82,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
       - name: Build VST3
         run: |
           cmake -S . -B build -A x64 -DSCALESNAP_BUILD_TESTS=OFF
@@ -70,8 +92,9 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force out | Out-Null
-          Compress-Archive -Path "build/ScaleSnap_artefacts/Release/VST3/Scale Snap.vst3" -DestinationPath out/ScaleSnap-Windows.zip
+          Compress-Archive -Path "build/ScaleSnap_artefacts/Release/VST3/Scale Snap.vst3" -DestinationPath out/ScaleSnap-VST3-Windows.zip
           Copy-Item README.md out/
+          python scripts/release.py verify-vst3 out/ScaleSnap-VST3-Windows.zip --windows
       - uses: actions/upload-artifact@v4
         with:
           name: ScaleSnap-Windows
@@ -81,6 +104,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -96,17 +121,65 @@ jobs:
         run: python3 m4l/tools/check_chroma.py
       - name: Node tests (snapping parity with C++, patcher simulation, detection, audio detection, favorites, clips, .amxd)
         run: node m4l/tests/run.js
+      - name: Python tests (frozen .amxd reader and writer)
+        run: python3 -m unittest discover -s m4l/tests -p "test_*.py"
       - name: Build the frozen Max for Live devices (one self-contained .amxd each)
         run: |
           python3 m4l/tools/build_amxd.py
           python3 m4l/tools/build_amxd.py --verify "m4l/dist/Scale Snap.amxd"
           python3 m4l/tools/build_amxd.py --verify "m4l/dist/Scale Snap Detect.amxd"
           test "$(LC_ALL=C ls m4l/dist)" = "$(printf 'Scale Snap Detect.amxd\nScale Snap.amxd')"
-      - name: Stage the download (the two devices and the install note)
+      - name: Package ScaleSnap-Ableton.zip (folder "Scale Snap" with both devices and INSTALL.txt)
         run: |
-          mkdir out
-          cp m4l/dist/*.amxd m4l/INSTALL.md out/
+          python3 scripts/release.py package-ableton out
+          unzip -l out/ScaleSnap-Ableton.zip
       - uses: actions/upload-artifact@v4
         with:
           name: ScaleSnap-M4L
           path: out
+
+  release:
+    # Runs for a pushed tag v* or a manual run with a tag. Publishes (or updates) the GitHub Release for that tag.
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+    needs: [tests, processor-tests, m4l, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ inputs.tag || github.ref_name }}
+      cancel-in-progress: false
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+      - name: The tag must match the CMake version
+        run: python3 scripts/release.py check-version "$TAG"
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect the release assets
+        run: |
+          mkdir release
+          cp artifacts/ScaleSnap-M4L/ScaleSnap-Ableton.zip \
+             artifacts/ScaleSnap-macOS/ScaleSnap-VST3-macOS.zip \
+             artifacts/ScaleSnap-Windows/ScaleSnap-VST3-Windows.zip release/
+          python3 scripts/release.py verify-assets release
+          python3 scripts/release.py notes "$TAG" release-notes.md
+          ls -l release
+      - name: Publish the release (re-running for the same tag replaces the assets)
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Scale Snap ${{ env.TAG }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          make_latest: "true"
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: |
+            release/ScaleSnap-Ableton.zip
+            release/ScaleSnap-VST3-macOS.zip
+            release/ScaleSnap-VST3-Windows.zip

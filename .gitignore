@@ -3,3 +3,4 @@ build/
 .idea/
 .vscode/
 cmake-build-*/
+__pycache__/

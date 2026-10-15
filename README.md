@@ -1,23 +1,43 @@
 # Scale Snap
 
 Keeps what you play in key, like Logic's Scale Quantize, with a library of 162 scales from many traditions.
-It comes in two forms:
 
-- **Max for Live MIDI effect: the recommended way in Ableton Live 11 Suite** (or Standard with Max for Live).
-  `Scale Snap.amxd` (one self-contained file: just drag it into Live, or put it anywhere in your User Library)
-  goes in the MIDI-effect slot right in front of your instrument on the same track: no second
-  track, no routing. It also detects the key and scale of what you play or of a MIDI clip, and can snap a
-  recorded clip to a scale. See [m4l/README.md](m4l/README.md) (download: `ScaleSnap-M4L` artifact of the
-  latest "Build" run).
-- **VST3 plugin** (below): for other hosts, for Live without Max for Live (Standard without the add-on, Intro, Lite),
-  and for the chord mode. In Ableton it needs the two-track setup described further down, because Live does not
-  host third-party plugins in the MIDI-effect slot.
+## Install (1 minute)
 
-The rest of this page describes the VST3 plugin; the scale library and the correction rules are the same in both.
+For **Ableton Live 11 Suite** (or Standard with Max for Live), Mac or Windows. No Terminal, no plugin folders.
 
-## VST3 plugin
+1. **Download** [ScaleSnap-Ableton.zip](https://github.com/mikelisonline/scalesnap/releases/latest/download/ScaleSnap-Ableton.zip)
+   and unzip it. You get a folder called `Scale Snap`.
+   *(This repository is private: you must be signed in to GitHub, with access to it, for the link to work.)*
+2. **Keep it:** drag the `Scale Snap` folder into Live's browser, onto **Places > User Library**
+   (or, in Finder, put it in `~/Music/Ableton/User Library/`).
+3. **Use it:** open **User Library > Scale Snap** in the browser.
+   - Drag **`Scale Snap.amxd`** onto a **MIDI track, in front of the instrument**. Pick a key and a scale: wrong notes
+     are moved into the scale, and the clip records the corrected notes.
+   - Drag **`Scale Snap Detect.amxd`** onto an **audio track** to find the key and scale of the audio and send it to Scale Snap.
 
-A small MIDI plugin for Ableton Live (VST3, Mac and Windows) that keeps what you play in key, like
+Just want to try it? Skip step 2 and drag `Scale Snap.amxd` straight from the unzipped folder onto a MIDI track.
+Each device is a single self-contained file, so there is nothing else to copy.
+
+Newer versions are published as [Releases](https://github.com/mikelisonline/scalesnap/releases); the link above
+always points to the latest one. If a device stays empty or Live reports a missing file, see
+[m4l/INSTALL.md](m4l/INSTALL.md). How the devices work: [m4l/README.md](m4l/README.md).
+
+## What you get
+
+- **Max for Live devices (recommended in Live 11 Suite):** `Scale Snap.amxd` sits in the MIDI-effect slot right in
+  front of your instrument on the same track: no second track, no routing. It also detects the key and scale of what
+  you play or of a MIDI clip, and can snap a recorded clip to a scale. `Scale Snap Detect.amxd` does the key detection
+  for audio.
+- **VST3 plugin:** for other DAWs, for Live without Max for Live (Standard without the add-on, Intro, Lite), and for
+  the chord mode. See the next section.
+
+The scale library and the correction rules are the same in both. The sections below describe the VST3 plugin and its
+window.
+
+## For other DAWs / Live without Max for Live
+
+A small MIDI plugin (VST3, Mac and Windows) that works in other DAWs and in Ableton Live without Max for Live. It keeps what you play in key, like
 Logic's Scale Quantize:
 
 - **Live correction**: pick a key and a scale, and every wrong note you play is moved to the
@@ -27,7 +47,51 @@ Logic's Scale Quantize:
 - **Chords (optional)**: each key you press plays a diatonic triad, 7th or 9th chord built
   from the scale.
 
-## Controls
+### Installing the VST3
+
+Download from the [latest release](https://github.com/mikelisonline/scalesnap/releases/latest) (same sign-in note as above):
+
+- Mac (Apple Silicon and Intel): [ScaleSnap-VST3-macOS.zip](https://github.com/mikelisonline/scalesnap/releases/latest/download/ScaleSnap-VST3-macOS.zip)
+- Windows: [ScaleSnap-VST3-Windows.zip](https://github.com/mikelisonline/scalesnap/releases/latest/download/ScaleSnap-VST3-Windows.zip)
+
+Unzip it, then:
+
+**Mac**: copy `Scale Snap.vst3` to `~/Library/Audio/Plug-Ins/VST3/`. The plugin isn't
+notarized by Apple, so clear the "downloaded from the internet" flag once in Terminal:
+
+```sh
+xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/"Scale Snap.vst3"
+```
+
+**Windows**: copy the `Scale Snap.vst3` folder to `C:\Program Files\Common Files\VST3\`.
+
+Then in Ableton: Settings > Plug-Ins > turn on "Use VST3 Plug-in System Folders" and
+press **Rescan**.
+
+### Setting it up in Ableton Live (two tracks)
+
+Ableton doesn't let third-party plugins sit in the MIDI-effect slot, so Scale Snap loads as
+an *instrument* that outputs MIDI instead of sound. A second track takes that MIDI, plays
+your synth and records the corrected notes.
+
+1. **Track 1, "Keys in"**: a MIDI track with **Scale Snap** on it.
+   - *MIDI From*: your keyboard (or "All Ins").
+   - *Monitor*: **In**. Don't arm this track.
+2. **Track 2, "Synth"**: a MIDI track with your instrument (piano, synth, etc.).
+   - *MIDI From*: **1-Keys in**, and in the second drop-down choose **Scale Snap**.
+   - *Monitor*: Auto. **Arm** this track.
+3. Play. You hear the corrected notes on Track 2. Press record (Session or Arrangement) and
+   Track 2 records the corrected MIDI.
+
+To use another key or scale for a different part, open Scale Snap on Track 1 and change it.
+The settings are saved with your Live set, and Key/Scale/Correction/Chords can be automated or
+mapped to a controller.
+
+Tip: save Track 1 + Track 2 as a group or in a template set so it's ready every time.
+
+## Controls and scale list
+
+The VST3 window and the scale library (shared by both forms). For the Max for Live device see [m4l/README.md](m4l/README.md).
 
 ![Scale Snap](docs/screenshot.png)
 
@@ -98,45 +162,6 @@ The keyboard shows the scale (cream keys, with the root in a stronger orange), t
 Middle C is C3, as in Live. The line above it spells out the notes of the current scale.
 
 Everything else (pitch bend, mod wheel, sustain pedal, aftertouch) passes straight through.
-
-## Installing
-
-Download the build from this repo's **Actions** tab (latest "Build" workflow run →
-Artifacts → `ScaleSnap-macOS` or `ScaleSnap-Windows`), unzip it, then unzip the inner `ScaleSnap-macOS.zip` /
-`ScaleSnap-Windows.zip` (this keeps file permissions intact), then:
-
-**Mac**: copy `Scale Snap.vst3` to `~/Library/Audio/Plug-Ins/VST3/`. The plugin isn't
-notarized by Apple, so clear the "downloaded from the internet" flag once in Terminal:
-
-```sh
-xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/"Scale Snap.vst3"
-```
-
-**Windows**: copy the `Scale Snap.vst3` folder to `C:\Program Files\Common Files\VST3\`.
-
-Then in Ableton: Settings → Plug-Ins → turn on "Use VST3 Plug-in System Folders" and
-press **Rescan**.
-
-## Setting it up in Ableton Live (two tracks)
-
-Ableton doesn't let third-party plugins sit in the MIDI-effect slot, so Scale Snap loads as
-an *instrument* that outputs MIDI instead of sound. A second track takes that MIDI, plays
-your synth and records the corrected notes.
-
-1. **Track 1, "Keys in"**: a MIDI track with **Scale Snap** on it.
-   - *MIDI From*: your keyboard (or "All Ins").
-   - *Monitor*: **In**. Don't arm this track.
-2. **Track 2, "Synth"**: a MIDI track with your instrument (piano, synth, etc.).
-   - *MIDI From*: **1-Keys in**, and in the second drop-down choose **Scale Snap**.
-   - *Monitor*: Auto. **Arm** this track.
-3. Play. You hear the corrected notes on Track 2. Press record (Session or Arrangement) and
-   Track 2 records the corrected MIDI.
-
-To use another key or scale for a different part, open Scale Snap on Track 1 and change it.
-The settings are saved with your Live set, and Key/Scale/Correction/Chords can be automated or
-mapped to a controller.
-
-Tip: save Track 1 + Track 2 as a group or in a template set so it's ready every time.
 
 ## Building it yourself
 
