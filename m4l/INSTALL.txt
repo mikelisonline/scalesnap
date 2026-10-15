@@ -1,0 +1,22 @@
+SCALE SNAP {{VERSION}}  -  install in under a minute (Ableton Live 11 Suite, Mac or Windows)
+
+1. UNZIP ScaleSnap-Ableton.zip. You get a folder called "Scale Snap" with two devices:
+     Scale Snap.amxd         MIDI effect: keeps what you play in key
+     Scale Snap Detect.amxd  audio effect: finds the key of an audio track
+
+2. KEEP THEM: drag the whole "Scale Snap" folder into Live's browser, onto
+   Places > User Library.
+   (Or in Finder / Explorer: put it in ~/Music/Ableton/User Library/ on a Mac,
+   Documents\Ableton\User Library\ on Windows.)
+
+3. USE THEM: open User Library > Scale Snap in the browser.
+     - Drag "Scale Snap" onto a MIDI track, in front of the instrument.
+     - Drag "Scale Snap Detect" onto an audio track.
+   No Terminal, no extra files, no second track. Each device is a single file.
+
+Quick try without installing: drag Scale Snap.amxd straight from the unzipped
+folder onto a MIDI track (before the instrument).
+
+Problems? Scale Snap needs Max for Live (included in Live 11 Suite). If a device
+stays empty, see m4l/INSTALL.md in the repository.
+https://github.com/{{REPO}}

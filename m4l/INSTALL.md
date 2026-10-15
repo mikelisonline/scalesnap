@@ -9,14 +9,19 @@ scripts it needs are inside it.
 * **Scale Snap Detect** (audio effect): finds the key and scale of an audio track (or the master / a group) and sends
   it to Scale Snap.
 
-## Install
+## Install (1 minute)
 
-Drag the `.amxd` file(s) into Live: `Scale Snap.amxd` onto a **MIDI track, before the instrument**, `Scale Snap Detect.amxd`
-onto **any audio track** (or the master, a group or a return). That is all.
+1. **Download** [ScaleSnap-Ableton.zip](https://github.com/mikelisonline/scalesnap/releases/latest/download/ScaleSnap-Ableton.zip)
+   and unzip it: a folder `Scale Snap` with `Scale Snap.amxd`, `Scale Snap Detect.amxd` and `INSTALL.txt`.
+   (The repository is private: be signed in to GitHub, with access to it, for the link to work.)
+2. **Keep it:** drag the `Scale Snap` folder into Live's browser, onto **Places > User Library**
+   (or, in Finder / Explorer, put it in `~/Music/Ableton/User Library/` on a Mac, `Documents\Ableton\User Library\` on Windows).
+3. **Use it:** open **User Library > Scale Snap**. Drag `Scale Snap.amxd` onto a **MIDI track, before the instrument**,
+   and `Scale Snap Detect.amxd` onto **any audio track** (or the master, a group or a return).
 
-To keep them, put the files anywhere in your User Library (for example `Presets/MIDI Effects/Max MIDI Effect/` and
-`Presets/Audio Effects/Max Audio Effect/`; in Live: right-click the folder in the browser > Show in Finder / Explorer),
-then they show up in Live's browser.
+To just try it, drag `Scale Snap.amxd` from the unzipped folder straight onto a MIDI track. `INSTALL.txt` in the zip is
+the same three steps in plain text (its source is `m4l/INSTALL.txt`). To build the zip yourself:
+`python3 m4l/tools/build_amxd.py && python3 scripts/release.py package-ableton out`.
 
 ## Using Scale Snap Detect
 
