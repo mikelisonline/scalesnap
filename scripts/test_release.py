@@ -65,6 +65,46 @@ class VersionGuard(unittest.TestCase):
         self.assertIn("does not match the CMake version", bad.stderr)
 
 
+class IsLatest(unittest.TestCase):
+    TAGS = ["v1.0.0", "v1.0.1", "v1.1.0", "v0.9.0"]
+
+    def test_highest_tag_is_latest(self):
+        self.assertTrue(release.is_latest("v1.1.0", self.TAGS))
+
+    def test_older_hotfix_is_not_latest(self):
+        self.assertFalse(release.is_latest("v1.0.1", self.TAGS))
+        self.assertFalse(release.is_latest("v1.0.0", self.TAGS))
+
+    def test_compares_numerically_not_as_strings(self):
+        self.assertTrue(release.is_latest("v1.10.0", ["v1.9.0", "v1.10.0", "v1.2.0"]))
+        self.assertFalse(release.is_latest("v1.9.0", ["v1.9.0", "v1.10.0"]))
+        self.assertTrue(release.is_latest("v2.0.0", ["v1.99.99", "v2.0.0"]))
+
+    def test_only_tag_is_latest(self):
+        self.assertTrue(release.is_latest("v1.0.0", ["v1.0.0"]))
+        self.assertTrue(release.is_latest("v1.0.0", []))  # even if the tag list somehow lacks it
+
+    def test_non_release_tags_are_ignored(self):
+        noise = ["v2.0.0-rc1", "v3.0", "v9.9.9-beta", "release-9", "V8.0.0", "v1.0.00", "v1.2.3.4", "nightly"]
+        self.assertTrue(release.is_latest("v1.0.0", ["v1.0.0"] + noise))
+        self.assertFalse(release.is_latest("v1.0.0", ["v1.0.0", "v1.0.1"] + noise))
+
+    def test_invalid_tag_is_never_latest(self):
+        for tag in ("v2.0.0-rc1", "v1.0", "1.0.0", "", "v"):
+            with self.subTest(tag=tag):
+                self.assertFalse(release.is_latest(tag, ["v1.0.0"]))
+
+    def test_cli_prints_true_or_false(self):
+        r = run("is-latest", "v1.1.0", "--tags", "v1.0.0", "v1.1.0", "v1.0.1")
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "true"), r.stderr)
+        r = run("is-latest", "v1.0.1", "--tags", "v1.0.0", "v1.1.0", "v1.0.1")
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "false"), r.stderr)
+        r = run("is-latest", "v1.0.0", "--tags", "v1.0.0\nv1.0.1\n")  # one newline separated argument
+        self.assertEqual(r.stdout.strip(), "false")
+        r = run("is-latest", "v1.0.0", "--tags")  # no tags at all
+        self.assertEqual(r.stdout.strip(), "true")
+
+
 class AbletonZip(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

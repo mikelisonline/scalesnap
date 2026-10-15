@@ -154,8 +154,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.sha }}
+          fetch-depth: 0 # full history + every tag, to find the highest version below
       - name: The tag must match the CMake version
         run: python3 scripts/release.py check-version "$TAG"
+      - name: Is this the highest version tag? (only then does it become the "latest" release)
+        id: latest
+        run: |
+          latest=$(python3 scripts/release.py is-latest "$TAG" --tags $(git tag -l 'v*'))
+          echo "$TAG is the highest vX.Y.Z tag: $latest"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -176,7 +183,7 @@ jobs:
           body_path: release-notes.md
           draft: false
           prerelease: false
-          make_latest: "true"
+          make_latest: ${{ steps.latest.outputs.latest }} # "true" or "false"; re-running an older tag must not steal "latest"
           overwrite_files: true
           fail_on_unmatched_files: true
           files: |

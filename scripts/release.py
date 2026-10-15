@@ -7,6 +7,7 @@
     python3 scripts/release.py notes v1.0.0 OUT_FILE        # render .github/release-notes.md for the tag
     python3 scripts/release.py verify-vst3 ZIP --macos|--windows
     python3 scripts/release.py verify-assets DIR            # the three release assets exist and look right
+    python3 scripts/release.py is-latest v1.0.1 --tags $(git tag -l 'v*')   # print true/false: is it the highest vX.Y.Z tag?
 
 The version lives in one place: project(ScaleSnap VERSION x.y.z) in CMakeLists.txt.
 """
@@ -52,6 +53,27 @@ def check_version(tag, version):
         raise ReleaseError("tag '%s' does not match the CMake version %s (expected tag 'v%s'). "
                            "Bump project(... VERSION) in CMakeLists.txt, merge, then tag that commit."
                            % (tag, version, version))
+
+
+SEMVER_TAG = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+
+
+def is_latest(tag, tags):
+    """True when `tag` is the highest plain vX.Y.Z tag among `tags` (and `tag` itself).
+
+    Anything that is not exactly vX.Y.Z (v1.2.3-rc1, v1.2, release-3, ...) is ignored when looking for the highest,
+    and such a tag is never 'latest' itself. Used so that re-running an old release, or publishing a hotfix for an
+    older line, does not steal GitHub's 'latest release' (and with it every releases/latest/download/... link).
+    """
+    def key(t):
+        m = SEMVER_TAG.match(t)
+        return tuple(int(g) for g in m.groups()) if m else None
+
+    mine = key(tag)
+    if mine is None:
+        return False
+    others = [k for k in (key(t) for t in tags) if k is not None]
+    return mine >= max(others, default=mine)
 
 
 def _read(path):
@@ -160,6 +182,9 @@ def main(argv=None):
     g.add_argument("--windows", dest="platform", action="store_const", const="windows")
     p = sub.add_parser("verify-assets")
     p.add_argument("directory")
+    p = sub.add_parser("is-latest")
+    p.add_argument("tag")
+    p.add_argument("--tags", nargs="*", default=[], help="all existing tags (whitespace or newline separated is fine)")
     args = ap.parse_args(argv)
 
     try:
@@ -186,6 +211,8 @@ def main(argv=None):
         elif args.cmd == "verify-assets":
             verify_assets(args.directory)
             print("ok: all release assets present and well formed")
+        elif args.cmd == "is-latest":
+            print("true" if is_latest(args.tag, [t for a in args.tags for t in a.split()]) else "false")
     except (ReleaseError, OSError, zipfile.BadZipFile) as e:
         print("error: %s" % e, file=sys.stderr)
         return 1
